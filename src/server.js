@@ -6,6 +6,8 @@ import { ZodError } from 'zod'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { resolveSession } from './auth/middleware.js'
+import { authRoutes } from './auth/routes.js'
 
 export class ApiError extends Error {
   constructor(statusCode, code, message) {
@@ -27,6 +29,11 @@ export async function buildServer({ config }) {
   app.setValidatorCompiler(validatorCompiler)
   app.setSerializerCompiler(serializerCompiler)
   app.register(cookie)
+
+  // 根上下文直接挂（不要 app.register 包裹，否则封装上下文会让钩子对兄弟插件路由失效）：
+  app.decorateRequest('user', null)
+  app.addHook('onRequest', resolveSession)
+  await app.register(authRoutes, { prefix: '/api/auth' })
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ApiError) {
