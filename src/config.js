@@ -64,6 +64,15 @@ export function loadConfig(env = process.env) {
   }
 }
 
+let activeConfig = null
+export function setActiveConfig(config) {
+  activeConfig = config
+}
+export function getConfig() {
+  if (!activeConfig) throw new Error('config not initialized; call setActiveConfig() first')
+  return activeConfig
+}
+
 export function validateConfig(config) {
   if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
     throw new Error('PORT must be an integer from 1 to 65535')
