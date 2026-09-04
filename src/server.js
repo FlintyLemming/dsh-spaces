@@ -30,11 +30,6 @@ export async function buildServer({ config }) {
   app.setSerializerCompiler(serializerCompiler)
   app.register(cookie)
 
-  // 根上下文直接挂（不要 app.register 包裹，否则封装上下文会让钩子对兄弟插件路由失效）：
-  app.decorateRequest('user', null)
-  app.addHook('onRequest', resolveSession)
-  await app.register(authRoutes, { prefix: '/api/auth' })
-
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ApiError) {
       return reply.code(err.statusCode).send({ error: { code: err.code, message: err.message } })
@@ -49,6 +44,12 @@ export async function buildServer({ config }) {
       error: { code: 'INTERNAL', message: '服务器内部错误' },
     })
   })
+
+  // 根上下文直接挂（不要 app.register 包裹，否则封装上下文会让钩子对兄弟插件路由失效）。
+  // 必须在 setErrorHandler 之后注册：子上下文在注册时快照父级错误处理器。
+  app.decorateRequest('user', null)
+  app.addHook('onRequest', resolveSession)
+  await app.register(authRoutes, { prefix: '/api/auth' })
 
   // dist 存在时托管 SPA，非 /api、非 /s 的 GET 路径回退到 index.html（客户端路由）。
   const indexPath = join(config.webDistDir, 'index.html')
