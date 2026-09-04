@@ -44,3 +44,9 @@ button {
   cursor: pointer;
 }
 button:hover { border-color: var(--muted); }
+input {
+  font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
+  width: 100%; max-width: 32ch;
+}
+input:focus { outline: 1px solid var(--muted); }
