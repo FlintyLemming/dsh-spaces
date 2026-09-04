@@ -3,7 +3,12 @@ import http from 'node:http'
 import { getConfig } from '../config.js'
 import { getDb } from '../store/db.js'
 import { getDocker, isMissingContainerError } from './docker.js'
-import { apiError } from '../server.js'
+import { apiError, ApiError } from '../server.js'
+import { getSetting } from '../store/settings.js'
+import { getSpaceById } from '../store/spaces.js'
+import {
+  getInstanceById, updateInstance, countRunningInstancesInSpace, countInstancesInSpace,
+} from '../store/instances.js'
 
 // ---- 命名 ----
 export function containerNameFor(spaceSlug, handle) {
@@ -218,26 +223,149 @@ export function startContainer(name) {
 export function stopContainer(name) {
   return withLifecycleLock(name, async () => {
     invalidateRunning(name)
-    try {
-      await getDocker().getContainer(name).stop({ t: 15 })
-    } catch (err) {
-      // 已停止视为成功（304 not modified）
-      if (err?.statusCode !== 304 && !isMissingContainerError(err)) throw err
-    }
+    await stopContainerInner(name)
     invalidateRunning(name)
   })
+}
+
+async function stopContainerInner(name) {
+  try {
+    await getDocker().getContainer(name).stop({ t: 15 })
+  } catch (err) {
+    // 已停止视为成功（304 not modified）
+    if (err?.statusCode !== 304 && !isMissingContainerError(err)) throw err
+  }
 }
 
 export function removeContainer(name) {
   return withLifecycleLock(name, async () => {
-    try {
-      await getDocker().getContainer(name).remove({ force: true })
-    } catch (err) {
-      if (!isMissingContainerError(err)) throw err
-    }
+    await removeContainerInner(name)
     invalidateRunning(name)
   })
 }
 
+async function removeContainerInner(name) {
+  try {
+    await getDocker().getContainer(name).remove({ force: true })
+  } catch (err) {
+    if (!isMissingContainerError(err)) throw err
+  }
+}
+
 /** 只删容器保留卷（重建/幂等再供给用）。 */
 export const removeContainerKeepVolumes = removeContainer
+
+// ---- 配额（spec §3：现算，不落统计表）----
+export function effectiveQuota(space) {
+  return {
+    cpu: space.quota_cpu ?? Number(getSetting('default_quota_cpu', '4')),
+    memMb: space.quota_mem_mb ?? Number(getSetting('default_quota_mem_mb', '8192')),
+    instances: space.quota_instances ?? Number(getSetting('default_quota_instances', '8')),
+  }
+}
+
+export function checkStartQuota(space) {
+  const q = effectiveQuota(space)
+  const running = countRunningInstancesInSpace(space.id)
+  const { instanceCpus, instanceMemoryMb } = getConfig()
+  if ((running + 1) * instanceCpus > q.cpu || (running + 1) * instanceMemoryMb > q.memMb) {
+    throw apiError(409, 'QUOTA_EXCEEDED',
+      `空间资源配额不足：运行中 ${running} 个实例，限额 ${q.cpu} 核 / ${q.memMb} MB`)
+  }
+}
+
+export function checkInstanceCountQuota(space) {
+  const q = effectiveQuota(space)
+  if (countInstancesInSpace(space.id) >= q.instances) {
+    throw apiError(409, 'QUOTA_EXCEEDED', `空间实例数已达上限 ${q.instances}`)
+  }
+}
+
+// ---- 实例生命周期（portal provision 模式：锁内重读 + 故障落 error）----
+export async function startInstance(instanceId) {
+  const initial = getInstanceById(instanceId)
+  if (!initial) throw apiError(404, 'NOT_FOUND', '实例不存在')
+  const name = initial.container_name
+  return withLifecycleLock(name, async () => {
+    const inst = getInstanceById(instanceId)
+    if (!inst) throw apiError(404, 'NOT_FOUND', '实例不存在')
+    if (inst.status === 'running' && await containerRunning(name)) return inst
+
+    const image = getSetting('image_digest')
+    if (!image) throw apiError(503, 'IMAGE_NOT_CONFIGURED', '平台尚未配置 dsh 镜像，请联系管理员')
+    const space = getSpaceById(inst.space_id)
+    const config = getConfig()
+    updateInstance(inst.id, { status: 'starting', error: null })
+    try {
+      checkStartQuota(space)
+      const port = inst.port ?? await allocatePort()
+      if (port !== inst.port) updateInstance(inst.id, { port })
+
+      // 镜像 digest 变化或容器缺失 → 重建容器（保留卷）
+      if (await containerExists(name)) {
+        const info = await getDocker().getContainer(name).inspect()
+        if (info.Image !== image && inst.image_digest && inst.image_digest !== image) {
+          await removeContainerKeepVolumes(name)
+        }
+      }
+      if (!(await containerExists(name))) {
+        const spaceSlug = space.slug
+        const handle = name.slice(`dsh-${spaceSlug}-`.length)
+        await ensureVolume(sharedVolumeName(spaceSlug))
+        await ensureVolume(privateVolumeName(spaceSlug, handle))
+        await createInstanceContainer({ spaceSlug, handle, port, imageDigest: image })
+      }
+      if (!(await containerRunning(name, { fresh: true }))) {
+        invalidateRunning(name)
+        await getDocker().getContainer(name).start()
+        invalidateRunning(name)
+      }
+
+      const healthy = await waitHealthy(port, config.instanceStartTimeoutMs)
+      // 健康轮询期间行可能已被删除（空间删除级联）——复查墓碑
+      const current = getInstanceById(instanceId)
+      if (!current) {
+        // 已持有该容器名的生命周期锁——用内部无锁版本，避免自我死锁
+        await removeContainerInner(name)
+        throw apiError(404, 'NOT_FOUND', '实例不存在')
+      }
+      if (healthy) {
+        updateInstance(inst.id, {
+          status: 'running', error: null, image_digest: image, last_active_at: Date.now(),
+        })
+      } else {
+        await stopContainerInner(name)
+        invalidateRunning(name)
+        updateInstance(inst.id, { status: 'error', error: 'health check timed out' })
+      }
+      return getInstanceById(instanceId)
+    } catch (err) {
+      const current = getInstanceById(instanceId)
+      if (current) {
+        if (err instanceof ApiError) {
+          // 业务错误（配额/端口）→ 回到 stopped，保留原因
+          updateInstance(inst.id, { status: 'stopped', error: err.message })
+        } else {
+          updateInstance(inst.id, { status: 'error', error: String(err?.message ?? err) })
+        }
+      }
+      throw err
+    }
+  })
+}
+
+export async function stopInstance(instanceId) {
+  const inst = getInstanceById(instanceId)
+  if (!inst) throw apiError(404, 'NOT_FOUND', '实例不存在')
+  await stopContainer(inst.container_name)
+  updateInstance(inst.id, { status: 'stopped', error: null })
+  return getInstanceById(instanceId)
+}
+
+export async function rebuildInstance(instanceId) {
+  const inst = getInstanceById(instanceId)
+  if (!inst) throw apiError(404, 'NOT_FOUND', '实例不存在')
+  await removeContainerKeepVolumes(inst.container_name)
+  updateInstance(inst.id, { status: 'stopped', error: null })
+  return startInstance(instanceId)
+}
