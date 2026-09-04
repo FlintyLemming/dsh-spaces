@@ -145,12 +145,12 @@ export async function containerRunning(name, { fresh = false } = {}) {
 }
 
 // ---- 健康轮询（portal waitHealthy 移植）----
-export function waitHealthy(port, timeoutMs) {
+export function waitHealthy(port, timeoutMs, path = '/') {
   return new Promise((resolve) => {
     const deadline = Date.now() + timeoutMs
     const check = () => {
       const req = http.get(
-        { host: '127.0.0.1', port, path: '/', timeout: 5000 },
+        { host: '127.0.0.1', port, path, timeout: 5000 },
         (res) => {
           res.resume()
           if (res.statusCode === 200) return resolve(true)
@@ -322,7 +322,9 @@ export async function startInstance(instanceId) {
         invalidateRunning(name)
       }
 
-      const healthy = await waitHealthy(port, config.instanceStartTimeoutMs)
+      // --base-path 部署下根路径 404：探测实例自己的 base path
+      const healthy = await waitHealthy(port, config.instanceStartTimeoutMs,
+        `/s/${space.slug}/${name.slice(`dsh-${space.slug}-`.length)}/`)
       // 健康轮询期间行可能已被删除（空间删除级联）——复查墓碑
       const current = getInstanceById(instanceId)
       if (!current) {
