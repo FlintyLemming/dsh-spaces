@@ -8,6 +8,7 @@ import { getSetting } from '../store/settings.js'
 import { getSpaceById } from '../store/spaces.js'
 import {
   getInstanceById, updateInstance, countRunningInstancesInSpace, countInstancesInSpace,
+  listAllInstances, listRunningInstances,
 } from '../store/instances.js'
 
 // ---- 命名 ----
@@ -368,4 +369,49 @@ export async function rebuildInstance(instanceId) {
   await removeContainerKeepVolumes(inst.container_name)
   updateInstance(inst.id, { status: 'stopped', error: null })
   return startInstance(instanceId)
+}
+
+/** spec §5：启动时对比 SQLite 与 docker ps -a，纠正状态不一致。 */
+export async function reconcile() {
+  const containers = await getDocker().listContainers({ all: true })
+  const byName = new Map()
+  for (const c of containers) {
+    const name = (c.Names?.[0] ?? '').replace(/^\//, '')
+    if (name) byName.set(name, c)
+  }
+  for (const inst of listAllInstances()) {
+    const c = byName.get(inst.container_name)
+    if (!c) {
+      if (inst.status === 'running' || inst.status === 'starting') {
+        updateInstance(inst.id, { status: 'error', error: 'container disappeared' })
+      }
+    } else if (c.State === 'running' && inst.status === 'stopped') {
+      updateInstance(inst.id, { status: 'running', error: null })
+    }
+  }
+}
+
+/** spec §5：空闲超时自动停止（阈值 settings.idle_stop_minutes，默认 60）。 */
+export async function sweepIdleInstances(now = Date.now()) {
+  const idleMin = Number(getSetting('idle_stop_minutes', '60'))
+  const cutoff = now - idleMin * 60 * 1000
+  for (const inst of listRunningInstances()) {
+    const lastActive = inst.last_active_at ?? inst.created_at
+    if (lastActive <= cutoff) {
+      try {
+        await stopInstance(inst.id)
+      } catch (err) {
+        console.error(`[orchestrator] idle stop failed for ${inst.container_name}:`, err?.message ?? err)
+      }
+    }
+  }
+}
+
+export function startIdleSweep() {
+  const timer = setInterval(() => {
+    sweepIdleInstances().catch((err) =>
+      console.error('[orchestrator] idle sweep failed:', err?.message ?? err))
+  }, getConfig().idleSweepIntervalMs)
+  timer.unref?.()
+  return timer
 }

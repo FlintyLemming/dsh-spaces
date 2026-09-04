@@ -3,6 +3,7 @@ import { loadConfig, validateConfig, setActiveConfig } from './config.js'
 import { initDb } from './store/db.js'
 import { buildServer } from './server.js'
 import { verifyDockerRuntime } from './orchestrator/docker.js'
+import { ensureTenantNetwork, reconcile, startIdleSweep } from './orchestrator/index.js'
 import { ensureAdmin } from './auth/bootstrap.js'
 
 const config = loadConfig()
@@ -11,6 +12,9 @@ setActiveConfig(config)
 initDb(join(config.dataDir, 'dsh-spaces.db'))
 ensureAdmin(config)
 await verifyDockerRuntime(config)
+await ensureTenantNetwork()
+await reconcile()
+startIdleSweep()
 
 const app = await buildServer({ config })
 await app.listen({ port: config.port, host: config.host })
