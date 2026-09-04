@@ -1,0 +1,28 @@
+{
+  "name": "dsh-spaces",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "vitest run",
+    "build:web": "npm --prefix src/web run build",
+    "build:image": "bash scripts/build-image.sh"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/static": "^8.2.0",
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^12.2.0",
+    "dockerode": "^4.0.4",
+    "fastify": "^5.4.0",
+    "http-proxy": "^1.18.1",
+    "openid-client": "^6.6.2",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

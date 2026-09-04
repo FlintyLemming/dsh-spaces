@@ -1,0 +1,8 @@
+node_modules/
+data/
+dist/
+.env
+*.log
+src/web/node_modules/
+src/web/dist/
+dsh/
