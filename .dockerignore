@@ -1,0 +1,9 @@
+# .dockerignore — deny-by-default；白名单漂移即构建失败（build-image.sh 校验）
+*
+!dsh/
+!dsh/**
+!image/
+!image/Dockerfile
+!image/start.sh
+!image/dsh-security.patch
+!image/dsh-base-path.patch
