@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { resolveSession } from './auth/middleware.js'
 import { authRoutes } from './auth/routes.js'
+import { spacesRoutes } from './spaces/routes.js'
 
 export class ApiError extends Error {
   constructor(statusCode, code, message) {
@@ -50,6 +51,7 @@ export async function buildServer({ config }) {
   app.decorateRequest('user', null)
   app.addHook('onRequest', resolveSession)
   await app.register(authRoutes, { prefix: '/api/auth' })
+  await app.register(spacesRoutes, { prefix: '/api/spaces' })
 
   // dist 存在时托管 SPA，非 /api、非 /s 的 GET 路径回退到 index.html（客户端路由）。
   const indexPath = join(config.webDistDir, 'index.html')
