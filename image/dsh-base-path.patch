@@ -1,0 +1,370 @@
+diff --git a/apps/web/index.html b/apps/web/index.html
+index a14de72d4..83d29b8ed 100644
+--- a/apps/web/index.html
++++ b/apps/web/index.html
+@@ -3,8 +3,8 @@
+   <head>
+     <meta charset="utf-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1" />
+-    <link rel="manifest" href="/manifest.webmanifest" />
+-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
++    <link rel="manifest" href="./manifest.webmanifest" />
++    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+     <title>DeepSeek Harness</title>
+   </head>
+   <body>
+diff --git a/apps/web/vite.config.ts b/apps/web/vite.config.ts
+index 7b9ef7a15..ccb7c0877 100644
+--- a/apps/web/vite.config.ts
++++ b/apps/web/vite.config.ts
+@@ -90,6 +90,9 @@ function npmPackageOf(id: string): string | undefined {
+ }
+ 
+ export default defineConfig({
++  // Relative asset URLs: the app must boot under any --base-path prefix
++  // without a rebuild, so built references resolve against the document URL.
++  base: './',
+   plugins: [rejectStandaloneServe(), react()],
+   build: {
+     sourcemap: true,
+diff --git a/packages/bundle/web-app/cordis.patch.yml b/packages/bundle/web-app/cordis.patch.yml
+index b06e63b54..50faf7ad3 100644
+--- a/packages/bundle/web-app/cordis.patch.yml
++++ b/packages/bundle/web-app/cordis.patch.yml
+@@ -118,6 +118,7 @@
+       config:
+         host: !!js ctx.webStartup.host ?? '127.0.0.1'
+         port: !!js ctx.webStartup.port ?? 3080
++        basePath: !!js ctx.webStartup.basePath ?? ''
+ 
+     # Web glue owned by this bundle: resolves the built frontend dist (an
+     # assembly fact of dsh-web-app, never user config), mounts the
+diff --git a/packages/bundle/web-app/src/startup.ts b/packages/bundle/web-app/src/startup.ts
+index af6997cff..cb7877118 100644
+--- a/packages/bundle/web-app/src/startup.ts
++++ b/packages/bundle/web-app/src/startup.ts
+@@ -27,6 +27,8 @@ export interface WebStartupValues {
+   port?: number
+   /** Explicit `--trusted-host` authorities, in argument order. */
+   trustedHosts: string[]
++  /** `--base-path`, absent when the invocation did not name one. */
++  basePath?: string
+ }
+ 
+ /** The web flag family, as commander parsed it. */
+@@ -34,6 +36,7 @@ interface WebOptions {
+   host?: string
+   port?: string
+   trustedHost?: string[]
++  basePath?: string
+ }
+ 
+ /**
+@@ -48,6 +51,7 @@ function webCommand(): Command {
+     .option('--host <host>', 'bind host')
+     .option('--port <port>', 'listen port; pass 0 to let the OS pick a free one')
+     .option('--trusted-host <authority...>', 'extra authority the /api browser-trust fence accepts (host or host:port; repeatable)')
++    .option('--base-path <path>', 'serve the web app under this absolute path prefix (e.g. /s/space/user)')
+     .addHelpText('after', `
+ Examples:
+   dsh --profile web                          serve on the composed host and port
+@@ -72,10 +76,15 @@ export function apply(ctx: Context): void {
+     if (options.port !== undefined && !/^\d+$/.test(options.port)) {
+       program.error(`error: --port must be a number, got ${JSON.stringify(options.port)}`)
+     }
++    if (options.basePath !== undefined &&
++        (!options.basePath.startsWith('/') || options.basePath === '/' || options.basePath.endsWith('/'))) {
++      program.error(`error: --base-path must start with / and not end with /, got ${JSON.stringify(options.basePath)}`)
++    }
+     ctx.provide(WEB_STARTUP_SERVICE, {
+       ...options.host !== undefined && { host: options.host },
+       ...options.port !== undefined && { port: Number(options.port) },
+       trustedHosts: options.trustedHost ?? [],
++      ...options.basePath !== undefined && { basePath: options.basePath },
+     } satisfies WebStartupValues)
+   })
+   parseCmdline(ctx, program)
+diff --git a/packages/client/connection/src/client/rpc.ts b/packages/client/connection/src/client/rpc.ts
+index f8bacb155..e2657bc46 100644
+--- a/packages/client/connection/src/client/rpc.ts
++++ b/packages/client/connection/src/client/rpc.ts
+@@ -5,6 +5,7 @@ import {
+   serverResponseSchema,
+   type ClientRequest,
+ } from '@deepseek-ai/dsh-host-apiproxy/api'
++import { bootBasePath } from '@deepseek-ai/dsh-host-apiproxy/client'
+ import type { ClientConnectionRpc } from '../rpc.ts'
+ import { randomUuid } from './random-uuid.ts'
+ 
+@@ -28,7 +29,7 @@ export function createWebConnectionRpc(): ClientConnectionRpc {
+         payload,
+       }
+       const response = await globalThis.fetch(
+-        new URL(`${channel}/${endpoint}`, resolveBase()),
++        new URL(`${bootBasePath()}${channel}/${endpoint}`, resolveBase()),
+         {
+           method: 'POST',
+           headers: { 'content-type': 'application/json' },
+diff --git a/packages/client/connection/src/client/web-api-client.ts b/packages/client/connection/src/client/web-api-client.ts
+index a2c2d95b7..4b532cd2a 100644
+--- a/packages/client/connection/src/client/web-api-client.ts
++++ b/packages/client/connection/src/client/web-api-client.ts
+@@ -4,6 +4,7 @@ import type { ApiProxy, HostFrame, MuxFrame, RpcRequest, ServerRequest } from '.
+ import { AbstractApiClient } from './api.ts'
+ import { hostFrameSchema, muxFrameSchema } from '@deepseek-ai/dsh-host-apiproxy/api/events.schema'
+ import { serverRequestSchema } from '@deepseek-ai/dsh-host-apiproxy/api/rpc.schema'
++import { bootBasePath } from '@deepseek-ai/dsh-host-apiproxy/client'
+ import { HOST_EVENTS_PATH, MUX_EVENTS_PATH } from '../api-path.ts'
+ 
+ type SocketItem<F> = { kind: 'frame'; envelope: RpcRequest<F> } | { kind: 'end' }
+@@ -37,7 +38,7 @@ export class WebApiClient extends AbstractApiClient {
+     frameSchema: Parser<F>,
+     onOpen?: () => void,
+   ): AsyncGenerator<RpcRequest<F>> {
+-    const url = new URL(path, this.resolveBase())
++    const url = new URL(`${bootBasePath()}${path}`, this.resolveBase())
+     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+     const socket = new WebSocket(url)
+     const inbox: SocketItem<F>[] = []
+diff --git a/packages/client/hmr/src/client/index.ts b/packages/client/hmr/src/client/index.ts
+index 8e440ac0d..88f232d46 100644
+--- a/packages/client/hmr/src/client/index.ts
++++ b/packages/client/hmr/src/client/index.ts
+@@ -69,6 +69,16 @@ import { EVENTS_ENDPOINT } from '../events.ts'
+ export type { PluginsEventFrame } from '../events.ts'
+ export { EVENTS_ENDPOINT } from '../events.ts'
+ 
++/**
++ * Server base path prefix from the host-injected boot manifest, '' at the
++ * root. Inlined (rather than imported from apiproxy) to keep this package
++ * dependency-free; mirrors the apiproxy client's bootBasePath().
++ */
++function bootBasePath(): string {
++  const boot = (globalThis as { __DSH_BOOT__?: { basePath?: unknown } }).__DSH_BOOT__
++  return typeof boot?.basePath === 'string' ? boot.basePath : ''
++}
++
+ /** Cordis plugin name. */
+ export const name = 'client-hmr'
+ 
+@@ -164,7 +174,7 @@ export function apply(ctx: Context): void {
+   }
+ 
+   ctx.effect(() => {
+-    const source = new EventSource(EVENTS_ENDPOINT)
++    const source = new EventSource(`${bootBasePath()}${EVENTS_ENDPOINT}`)
+     source.addEventListener('message', (event: MessageEvent<string>) => {
+       let frame: PluginsEventFrame
+       try {
+diff --git a/packages/client/modules/src/client/manifest.ts b/packages/client/modules/src/client/manifest.ts
+index 3f30074fe..c758d6fed 100644
+--- a/packages/client/modules/src/client/manifest.ts
++++ b/packages/client/modules/src/client/manifest.ts
+@@ -66,6 +66,8 @@ export interface WebBootGraph {
+   rev: string
+   /** Composed entries; order carries no semantics (activation order is fiber inject waiting). */
+   entries: WebBootEntry[]
++  /** Server base path prefix (absent when serving from root); every absolute client URL is built under it. */
++  basePath?: string
+ }
+ 
+ /** The npm-package view of one boot row: what the module table needs to fetch the bundle. */
+@@ -96,6 +98,8 @@ export interface BootManifest {
+   modules: BootModuleRow[]
+   /** Rows as entry composition consumes them. */
+   plugins: BootPluginRow[]
++  /** Server base path prefix ('' when the wire omits it). */
++  basePath: string
+ }
+ 
+ /**
+@@ -116,6 +120,9 @@ export function parseBootManifest(wire: unknown): BootManifest {
+   if (!Array.isArray(graph.entries)) {
+     throw new Error('client-modules: boot manifest entries must be an array')
+   }
++  if (graph.basePath !== undefined && typeof graph.basePath !== 'string') {
++    throw new Error('client-modules: boot manifest basePath must be a string')
++  }
+   const modules: BootModuleRow[] = []
+   const plugins: BootPluginRow[] = []
+   for (const value of graph.entries as unknown[]) {
+@@ -140,7 +147,7 @@ export function parseBootManifest(wire: unknown): BootManifest {
+       immediately: row.immediately === true,
+     })
+   }
+-  return { rev: graph.rev, modules, plugins }
++  return { rev: graph.rev, modules, plugins, basePath: (graph.basePath as string | undefined) ?? '' }
+ }
+ 
+ /** The shape a client bundle hands to `window.__ModuleLoader__.load` (registration handoff). */
+diff --git a/packages/client/modules/src/index.ts b/packages/client/modules/src/index.ts
+index aa0ff5d59..bed9e07d9 100644
+--- a/packages/client/modules/src/index.ts
++++ b/packages/client/modules/src/index.ts
+@@ -146,11 +146,11 @@ function shortHash(input: string | Buffer): string {
+   return createHash('sha1').update(input).digest('hex').slice(0, 12)
+ }
+ 
+-/** Graph row for one bundle rev (url carries the rev as its cache-busting query). */
+-function graphRow(id: string, rev: string, injectEdges: string[] | undefined, immediately: boolean): WebBootEntry {
++/** Graph row for one bundle rev (url carries the rev as its cache-busting query and the server base path prefix). */
++function graphRow(id: string, rev: string, injectEdges: string[] | undefined, immediately: boolean, basePath: string): WebBootEntry {
+   return {
+     id,
+-    url: `/plugins/${id}/client.js?rev=${rev}`,
++    url: `${basePath}/plugins/${id}/client.js?rev=${rev}`,
+     rev,
+     ...(injectEdges !== undefined ? { inject: injectEdges } : {}),
+     ...(immediately ? { immediately: true } : {}),
+@@ -276,7 +276,7 @@ export class ClientModuleRegistry extends Service {
+     if (record === undefined) return undefined
+     const rev = shortHash(readFileSync(record.clientPath))
+     if (rev === record.entry.rev) return rev
+-    record.entry = graphRow(id, rev, record.entry.inject, record.entry.immediately === true)
++    record.entry = graphRow(id, rev, record.entry.inject, record.entry.immediately === true, this.ctx.webServer.basePath)
+     this.composed = this.compose()
+     for (const notify of this.rebuildListeners) {
+       // Containment: rebuilt() runs inside the HMR watch callback — a
+@@ -314,7 +314,8 @@ export class ClientModuleRegistry extends Service {
+ 
+   private compose(): WebBootGraph {
+     const entries = [...this.table.values()].map(record => record.entry)
+-    return { rev: shortHash(JSON.stringify(entries)), entries }
++    const basePath = this.ctx.webServer.basePath
++    return { rev: shortHash(JSON.stringify(entries)), entries, ...(basePath !== '' ? { basePath } : {}) }
+   }
+ 
+   private notifyGraphChanged(): void {
+@@ -396,7 +397,7 @@ export class ClientModuleRegistry extends Service {
+     // The rev rides the row from here on: a fiber restart reuses the row (and
+     // its rev) untouched; only rebuilt() re-reads the bundle.
+     const rev = this.initialBundleRevision(entryName, meta.clientPath)
+-    this.table.set(entryName, { entry: graphRow(entryName, rev, meta.inject, meta.immediately), clientPath: meta.clientPath })
++    this.table.set(entryName, { entry: graphRow(entryName, rev, meta.inject, meta.immediately, this.ctx.webServer.basePath), clientPath: meta.clientPath })
+     return true
+   }
+ 
+diff --git a/packages/host/apiproxy/src/fetch/client.ts b/packages/host/apiproxy/src/fetch/client.ts
+index 70e3ece58..853e39137 100644
+--- a/packages/host/apiproxy/src/fetch/client.ts
++++ b/packages/host/apiproxy/src/fetch/client.ts
+@@ -233,6 +233,18 @@ type UnaryTimeoutPolicy = 'default' | 'caller-signal-only'
+ /** URL base for in-process handler injection (fake authority, opencode precedent). */
+ const INTERNAL_BASE = 'http://dsh.internal'
+ 
++/**
++ * Server base path prefix from the host-injected boot manifest
++ * (`window.__DSH_BOOT__.basePath`), '' when the server sits at the root.
++ * Absolute API paths are built as `${bootBasePath()}/api/...`; `new URL` would
++ * otherwise drop any path component of the base for absolute-path inputs.
++ * @returns the prefix, e.g. '/s/space/user', or '' outside the browser boot.
++ */
++export function bootBasePath(): string {
++  const boot = (globalThis as { __DSH_BOOT__?: { basePath?: unknown } }).__DSH_BOOT__
++  return typeof boot?.basePath === 'string' ? boot.basePath : ''
++}
++
+ /**
+  * Abstract fetch-carrier client. Subclasses supply the transport (doFetch) and may refine the
+  * per-message tap (onEnvelope) — platform aspects stay in subclasses, protocol invariants stay
+@@ -315,7 +327,7 @@ export abstract class AbstractApiClient implements IApiClient {
+         ? AbortSignal.timeout(this.timeoutMs)
+         : AbortSignal.any([AbortSignal.timeout(this.timeoutMs), signal])
+       : signal
+-    const response = await this.doFetch(new URL(path, this.resolveBase()), {
++    const response = await this.doFetch(new URL(`${bootBasePath()}${path}`, this.resolveBase()), {
+       method: 'POST',
+       headers: { 'content-type': 'application/json' },
+       body: JSON.stringify(body),
+@@ -372,7 +384,7 @@ export abstract class AbstractApiClient implements IApiClient {
+     frameSchema: z.ZodType<F>,
+     onOpen?: () => void,
+   ): AsyncGenerator<RpcRequest<F>> {
+-    const response = await this.doFetch(new URL(path, this.resolveBase()), { signal })
++    const response = await this.doFetch(new URL(`${bootBasePath()}${path}`, this.resolveBase()), { signal })
+     if (!response.ok || response.body === null) throw new Error(`transport failure for ${path}: HTTP ${response.status}`)
+     onOpen?.()
+     const reader = response.body.getReader()
+diff --git a/packages/host/webserver/src/index.ts b/packages/host/webserver/src/index.ts
+index a6c335b8d..8dcd4030b 100644
+--- a/packages/host/webserver/src/index.ts
++++ b/packages/host/webserver/src/index.ts
+@@ -47,6 +47,8 @@ export interface Config {
+   host: '127.0.0.1' | '0.0.0.0'
+   /** Listen port; zero requests an OS-assigned port. */
+   port: number
++  /** Absolute path prefix the whole app is served under ('' serves from root). */
++  basePath: string
+ }
+ 
+ /**
+@@ -60,6 +62,7 @@ export class WebServer extends Service {
+   static Config: z<Config> = z.object({
+     host: z.union([z.const('127.0.0.1'), z.const('0.0.0.0')]).required(),
+     port: z.natural().max(65535).required(),
++    basePath: z.string().default(''),
+   })
+ 
+   private readonly exact = new Map<string, WebRoute>()
+@@ -85,6 +88,11 @@ export class WebServer extends Service {
+     return this.config.host
+   }
+ 
++  /** The configured base path prefix ('' when serving from root). */
++  get basePath(): string {
++    return this.config.basePath
++  }
++
+   /**
+    * Register a named route. Duplicate (kind, path) throws — route patterns are
+    * a composition-level contract, so a collision is a misconfiguration.
+@@ -147,6 +155,15 @@ export class WebServer extends Service {
+   /** Listen; resolves once the socket is bound (rejection = FAILED fiber). */
+   async [Service.init](): Promise<void> {
+     const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
++      if (!this.stripBasePath(req)) {
++        if (req.url === this.config.basePath) {
++          res.writeHead(308, { Location: `${this.config.basePath}/` })
++        } else {
++          res.writeHead(404)
++        }
++        res.end()
++        return
++      }
+       /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
+       requests; the field is only optional on the client-side IncomingMessage type */
+       const rawPath = new URL(req.url ?? '/', 'http://x').pathname
+@@ -190,6 +207,10 @@ export class WebServer extends Service {
+       })
+       let route: WebUpgradeRoute | undefined
+       try {
++        if (!this.stripBasePath(req)) {
++          socket.destroy()
++          return
++        }
+         /* v8 ignore next -- node:http always sets url on server requests. */
+         route = this.upgrades.get(new URL(req.url ?? '/', 'http://x').pathname)
+       } catch (error) {
+@@ -238,6 +259,22 @@ export class WebServer extends Service {
+     }, 'webServer.listen')
+   }
+ 
++  /**
++   * Strip the configured basePath prefix from req.url so route registration
++   * stays prefix-free. With no basePath configured every request passes.
++   * @param req - the incoming request; its url is rewritten in place.
++   * @returns false when the request lies outside the prefix (caller answers).
++   */
++  private stripBasePath(req: IncomingMessage): boolean {
++    const base = this.config.basePath
++    if (base === '') return true
++    const url = req.url ?? '/'
++    if (url === base) return false
++    if (!url.startsWith(`${base}/`)) return false
++    req.url = url.slice(base.length)
++    return true
++  }
++
+   /** Longest-prefix-wins over the prefix table after an exact-table miss. */
+   private match(pathname: string): WebRoute | undefined {
+     const exact = this.exact.get(pathname)
