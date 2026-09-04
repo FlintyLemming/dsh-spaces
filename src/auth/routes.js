@@ -1,6 +1,7 @@
 import { writeAudit } from '../store/audit.js'
 import { requireUser, clearSession, publicUser } from './middleware.js'
 import { passwordLoginRoutes } from './password-login.js'
+import { oidcRoutes } from './oidc.js'
 
 export async function authRoutes(app) {
   app.get('/me', { preHandler: requireUser }, async (req) => ({ user: publicUser(req.user) }))
@@ -14,4 +15,5 @@ export async function authRoutes(app) {
   })
 
   await app.register(passwordLoginRoutes)
+  await app.register(oidcRoutes)
 }
