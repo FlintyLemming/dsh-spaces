@@ -3,11 +3,13 @@ import { loadConfig, validateConfig, setActiveConfig } from './config.js'
 import { initDb } from './store/db.js'
 import { buildServer } from './server.js'
 import { verifyDockerRuntime } from './orchestrator/docker.js'
+import { ensureAdmin } from './auth/bootstrap.js'
 
 const config = loadConfig()
 validateConfig(config)
 setActiveConfig(config)
 initDb(join(config.dataDir, 'dsh-spaces.db'))
+ensureAdmin(config)
 await verifyDockerRuntime(config)
 
 const app = await buildServer({ config })
