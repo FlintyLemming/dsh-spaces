@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { apiFetch, ApiRequestError } from '../api'
 import { useMe } from '../components/RequireAuth'
 
@@ -71,7 +71,7 @@ export default function SpaceDetail() {
           onClick={() => action('stop')}>停止</button>{' '}
         <button disabled={busy || !instance} onClick={() => action('rebuild')}>重建</button>{' '}
         {instance?.status === 'running' && user ? (
-          <a href={`/s/${space.slug}/${user.handle}/`}>打开</a>
+          <Link to={`/spaces/${space.slug}/instance`}>打开</Link>
         ) : null}
       </p>
 
