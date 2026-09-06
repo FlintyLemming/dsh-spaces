@@ -8,6 +8,8 @@ import AdminLayout from './pages/admin/AdminLayout'
 import UsersPage from './pages/admin/UsersPage'
 import SpacesPage from './pages/admin/SpacesPage'
 import SpaceDetailPage from './pages/admin/SpaceDetailPage'
+import SettingsImagePage from './pages/admin/SettingsImagePage'
+import UsageAuditPage from './pages/admin/UsageAuditPage'
 
 export default function App() {
   return (
@@ -21,6 +23,8 @@ export default function App() {
         <Route path="users" element={<UsersPage />} />
         <Route path="spaces" element={<SpacesPage />} />
         <Route path="spaces/:slug" element={<SpaceDetailPage />} />
+        <Route path="settings" element={<SettingsImagePage />} />
+        <Route path="usage" element={<UsageAuditPage />} />
       </Route>
     </Routes>
   )
