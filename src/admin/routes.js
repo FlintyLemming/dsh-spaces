@@ -4,7 +4,7 @@ import { requireAdmin } from '../auth/middleware.js'
 import { getUserById, setUserStatus, updateUserRole } from '../store/users.js'
 import { deleteAllSessionsForUser } from '../store/sessions.js'
 import { listAllInstances, getInstance, deleteInstance } from '../store/instances.js'
-import { getSpaceBySlug, updateSpaceQuotas } from '../store/spaces.js'
+import { getSpaceBySlug, updateSpaceQuotas, listAllSpaces } from '../store/spaces.js'
 import { stopInstance, removeContainer, rebuildInstance } from '../orchestrator/index.js'
 import { getDocker } from '../orchestrator/docker.js'
 import { runImageBuild } from '../imagebuild/index.js'
@@ -14,6 +14,7 @@ import { writeAudit } from '../store/audit.js'
 import { getSetting, setSetting } from '../store/settings.js'
 import { listUsersWithStats, listSpacesWithStats, getSpaceAdminDetail, countActiveAdmins }
   from './queries.js'
+import { collectUsage } from './usage.js'
 
 // secret 不在此列：读接口只下发 oidc_client_secret_configured 布尔（spec §6）。
 const SETTINGS_KEYS = [
@@ -264,4 +265,6 @@ export default async function adminRoutes(app) {
       targetId: getSetting('image_digest') || null, detail: { total: results.length, ok: okCount } })
     return { results, ok: okCount, total: results.length }
   })
+
+  app.get('/usage', async () => collectUsage(getDocker(), listAllSpaces().map((s) => s.slug)))
 }
