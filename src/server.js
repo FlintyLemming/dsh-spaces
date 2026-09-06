@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { resolveSession } from './auth/middleware.js'
 import { authRoutes } from './auth/routes.js'
 import { spacesRoutes } from './spaces/routes.js'
+import { gatewayPlugin } from './gateway/index.js'
 
 export class ApiError extends Error {
   constructor(statusCode, code, message) {
@@ -22,7 +23,7 @@ export function apiError(statusCode, code, message) {
   return new ApiError(statusCode, code, message)
 }
 
-export async function buildServer({ config }) {
+export async function buildServer({ config, gatewayProxy } = {}) {
   const app = Fastify({
     logger: { level: config.environment === 'development' ? 'info' : 'warn' },
     trustProxy: true,
@@ -52,6 +53,10 @@ export async function buildServer({ config }) {
   app.addHook('onRequest', resolveSession)
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(spacesRoutes, { prefix: '/api/spaces' })
+
+  // 网关拦截钩子挂在根上下文：/s/ 请求大多无路由匹配，封装上下文的钩子不会触发。
+  // 必须在静态托管之前接线，避免 SPA 回退先接管 /s/ 路径。
+  await gatewayPlugin(app, { config, ...(gatewayProxy ? { proxy: gatewayProxy } : {}) })
 
   // dist 存在时托管 SPA，非 /api、非 /s 的 GET 路径回退到 index.html（客户端路由）。
   const indexPath = join(config.webDistDir, 'index.html')
