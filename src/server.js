@@ -10,6 +10,7 @@ import { resolveSession } from './auth/middleware.js'
 import { authRoutes } from './auth/routes.js'
 import { spacesRoutes } from './spaces/routes.js'
 import { gatewayPlugin } from './gateway/index.js'
+import adminRoutes from './admin/routes.js'
 
 export class ApiError extends Error {
   constructor(statusCode, code, message) {
@@ -53,6 +54,7 @@ export async function buildServer({ config, gatewayProxy } = {}) {
   app.addHook('onRequest', resolveSession)
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(spacesRoutes, { prefix: '/api/spaces' })
+  await app.register(adminRoutes, { prefix: '/api/admin' })
 
   // 网关拦截钩子挂在根上下文：/s/ 请求大多无路由匹配，封装上下文的钩子不会触发。
   // 必须在静态托管之前接线，避免 SPA 回退先接管 /s/ 路径。
