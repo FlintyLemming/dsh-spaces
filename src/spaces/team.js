@@ -1,11 +1,14 @@
 import { apiError } from '../server.js'
 import { writeAudit } from '../store/audit.js'
 import {
-  createSpace, getSpaceBySlug, addSpaceMember, getSpaceMember,
+  createSpace, getSpaceBySlug, addSpaceMember, getSpaceMember, removeSpaceMember,
 } from '../store/spaces.js'
-import { createVolume } from '../store/volumes.js'
-import { getUserByEmail } from '../store/users.js'
-import { ensureVolume, prepareSharedVolume } from '../orchestrator/index.js'
+import { createVolume, listVolumesForSpace, deleteVolume } from '../store/volumes.js'
+import { getUserByEmail, getUserById } from '../store/users.js'
+import { getInstance, deleteInstance } from '../store/instances.js'
+import {
+  ensureVolume, prepareSharedVolume, stopInstance, removeContainerKeepVolumes, removeVolume,
+} from '../orchestrator/index.js'
 
 /** 团队空间 slug：小写 ascii + 连字符；全部剥离后兜底 'team'。 */
 export function deriveTeamSlug(name) {
@@ -81,4 +84,48 @@ export async function addMemberByEmail({ space, email, actor }) {
     targetId: String(space.id), detail: { email: target.email } })
   return { userId: target.id, email: target.email, handle: target.handle,
     displayName: target.display_name, role: 'member' }
+}
+
+/** docker 步骤重试：最多 attempts 次，间隔 delayMs（测试可注入 0）。 */
+export async function withRetry(fn, { attempts = 3, delayMs = 500 } = {}) {
+  let lastErr
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastErr = err
+      if (i < attempts - 1 && delayMs > 0) {
+        await new Promise((r) => setTimeout(r, delayMs))
+      }
+    }
+  }
+  throw lastErr
+}
+
+/**
+ * 移除成员并级联清理：停实例 → 删容器 → 删私有卷 → 删实例行 → 删卷行 → 删成员行。
+ * 顺序固定，不可交换（spec §5：禁止残留孤儿资源）。
+ */
+export async function removeMemberCascade({ space, targetUserId, actor, retryDelayMs = 500 }) {
+  assertTeamSpace(space)
+  requireSpaceOwner(actor, space)
+  const membership = getSpaceMember(space.id, targetUserId)
+  if (!membership) throw apiError(404, 'MEMBER_NOT_FOUND', '该用户不是空间成员')
+  if (membership.role === 'owner') {
+    throw apiError(400, 'CANNOT_REMOVE_OWNER', '不能移除空间所有者')
+  }
+  const target = getUserById(targetUserId)
+  const inst = getInstance(space.id, targetUserId)
+  if (inst) {
+    await withRetry(() => stopInstance(inst.id), { delayMs: retryDelayMs })
+    await withRetry(() => removeContainerKeepVolumes(inst.container_name), { delayMs: retryDelayMs })
+  }
+  const vol = listVolumesForSpace(space.id)
+    .find((v) => v.kind === 'private' && v.user_id === targetUserId)
+  if (vol) await withRetry(() => removeVolume(vol.docker_name), { delayMs: retryDelayMs })
+  if (inst) deleteInstance(inst.id)
+  if (vol) deleteVolume(vol.id)
+  removeSpaceMember(space.id, targetUserId)
+  writeAudit({ actorId: actor.id, action: 'space.member_remove', targetType: 'space',
+    targetId: String(space.id), detail: { email: target?.email } })
 }
