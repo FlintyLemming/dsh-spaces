@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
+import { CreateSpaceDialog } from '../components/CreateSpaceDialog'
 
 interface SpaceRow {
   id: number
@@ -18,6 +19,8 @@ const STATUS_TEXT: Record<string, string> = {
 export default function SpaceList() {
   const [spaces, setSpaces] = useState<SpaceRow[] | null>(null)
   const [error, setError] = useState('')
+  const [creating, setCreating] = useState(false)
+  const navigate = useNavigate()
   useEffect(() => {
     apiFetch<{ spaces: SpaceRow[] }>('/api/spaces')
       .then((r) => setSpaces(r.spaces))
@@ -49,7 +52,16 @@ export default function SpaceList() {
       <h1 className="title">空间</h1>
       <h2>个人空间</h2>
       {renderTable(personal)}
-      <h2>团队空间</h2>
+      <div className="section-head">
+        <h2>团队空间</h2>
+        <button onClick={() => setCreating(true)}>创建团队空间</button>
+      </div>
+      {creating && (
+        <CreateSpaceDialog
+          onCreated={(slug) => { setCreating(false); navigate(`/spaces/${slug}`) }}
+          onClose={() => setCreating(false)}
+        />
+      )}
       {team.length ? renderTable(team) : <p className="body">还没有加入任何团队空间。</p>}
     </main>
   )
