@@ -51,3 +51,11 @@ export function deriveUniqueHandle(seed) {
   }
   return candidate
 }
+
+export function setUserStatus(id, status) {
+  updateUser(id, { status })
+}
+
+export function updateUserRole(id, role) {
+  updateUser(id, { role })
+}
