@@ -5,7 +5,9 @@ import { getUserById, setUserStatus, updateUserRole } from '../store/users.js'
 import { deleteAllSessionsForUser } from '../store/sessions.js'
 import { listAllInstances, getInstance, deleteInstance } from '../store/instances.js'
 import { getSpaceBySlug, updateSpaceQuotas } from '../store/spaces.js'
-import { stopInstance, removeContainer } from '../orchestrator/index.js'
+import { stopInstance, removeContainer, rebuildInstance } from '../orchestrator/index.js'
+import { getDocker } from '../orchestrator/docker.js'
+import { runImageBuild } from '../imagebuild/index.js'
 import { deleteSpaceCascade } from '../spaces/team.js'
 import { closeUserSockets } from '../gateway/index.js'
 import { writeAudit } from '../store/audit.js'
@@ -197,5 +199,69 @@ export default async function adminRoutes(app) {
         targetId: null, detail: { changed } })
     }
     return { ok: true, changed }
+  })
+
+  // 构建成功不自动切换 digest：切换是独立的、可审计的部署动作（spec §6）。
+  app.post('/image/build', async (req, reply) => {
+    let result
+    try {
+      result = await runImageBuild()
+    } catch (err) {
+      if (err.code === 'BUILD_IN_PROGRESS') {
+        return reply.code(409).send({
+          error: { code: 'BUILD_IN_PROGRESS', message: '已有构建在进行中' },
+        })
+      }
+      const log = `${err.stdout ?? ''}${err.stderr ?? ''}${err.message ?? err}`
+      setSetting('image_last_build',
+        JSON.stringify({ digest: null, at: Date.now(), ok: false, log: log.slice(-4096) }))
+      writeAudit({ actorId: req.user.id, action: 'admin.image_build', targetType: 'image',
+        targetId: null, detail: { ok: false } })
+      throw apiError(500, 'IMAGE_BUILD_FAILED', '镜像构建失败，请查看构建日志')
+    }
+    setSetting('image_last_build',
+      JSON.stringify({ digest: result.digest, at: Date.now(), ok: true, log: result.log }))
+    writeAudit({ actorId: req.user.id, action: 'admin.image_build', targetType: 'image',
+      targetId: result.digest, detail: { ok: true } })
+    return { digest: result.digest }
+  })
+
+  app.get('/image', async () => {
+    const lastBuild = getSetting('image_last_build')
+    return { digest: getSetting('image_digest'), lastBuild: lastBuild ? JSON.parse(lastBuild) : null }
+  })
+
+  app.put('/image/digest', {
+    schema: { body: z.object({ digest: z.string().regex(/^sha256:[a-f0-9]{64}$/) }) },
+  }, async (req) => {
+    try {
+      await getDocker().getImage(req.body.digest).inspect()
+    } catch {
+      throw apiError(400, 'IMAGE_NOT_FOUND', '该 digest 的镜像在本地不存在，请先构建')
+    }
+    setSetting('image_digest', req.body.digest)
+    writeAudit({ actorId: req.user.id, action: 'admin.image_digest', targetType: 'image',
+      targetId: req.body.digest, detail: null })
+    return { ok: true }
+  })
+
+  // 串行重建：避免宿主机被并发拉起的容器压垮（YAGNI 并发调度）。
+  app.post('/image/rebuild-all', async (req) => {
+    const results = []
+    for (const inst of listAllInstances()) {
+      try {
+        await rebuildInstance(inst.id)
+        results.push({ id: inst.id, container: inst.container_name, ok: true })
+      } catch (err) {
+        results.push({
+          id: inst.id, container: inst.container_name, ok: false,
+          error: String(err?.message ?? err),
+        })
+      }
+    }
+    const okCount = results.filter((r) => r.ok).length
+    writeAudit({ actorId: req.user.id, action: 'admin.image_rebuild_all', targetType: 'image',
+      targetId: getSetting('image_digest') || null, detail: { total: results.length, ok: okCount } })
+    return { results, ok: okCount, total: results.length }
   })
 }
