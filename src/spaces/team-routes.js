@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import { requireUser } from '../auth/middleware.js'
 import { getSpaceBySlug } from '../store/spaces.js'
-import { addMemberByEmail, createTeamSpace, removeMemberCascade } from './team.js'
+import {
+  addMemberByEmail, createTeamSpace, deleteSpaceCascade, removeMemberCascade,
+} from './team.js'
 
 const slugParams = z.object({ slug: z.string().regex(/^[a-z0-9-]+$/) })
 
@@ -41,6 +43,14 @@ export default async function teamRoutes(app) {
   }, async (req, reply) => {
     const space = getSpaceBySlug(req.params.slug)
     await removeMemberCascade({ space, targetUserId: req.params.userId, actor: req.user })
+    return reply.code(204).send()
+  })
+
+  app.delete('/:slug', {
+    schema: { params: slugParams },
+  }, async (req, reply) => {
+    const space = getSpaceBySlug(req.params.slug)
+    await deleteSpaceCascade({ space, actor: req.user })
     return reply.code(204).send()
   })
 }

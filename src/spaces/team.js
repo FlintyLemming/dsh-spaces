@@ -1,14 +1,18 @@
 import { apiError } from '../server.js'
 import { writeAudit } from '../store/audit.js'
 import {
-  createSpace, getSpaceBySlug, addSpaceMember, getSpaceMember, removeSpaceMember,
+  createSpace, getSpaceBySlug, addSpaceMember, getSpaceMember, removeSpaceMember, deleteSpace,
 } from '../store/spaces.js'
 import { createVolume, listVolumesForSpace, deleteVolume } from '../store/volumes.js'
 import { getUserByEmail, getUserById } from '../store/users.js'
-import { getInstance, deleteInstance } from '../store/instances.js'
 import {
-  ensureVolume, prepareSharedVolume, stopInstance, removeContainerKeepVolumes, removeVolume,
+  getInstance, deleteInstance, listInstancesForSpace, updateInstance,
+} from '../store/instances.js'
+import {
+  ensureVolume, prepareSharedVolume, stopInstance, removeContainer,
+  removeContainerKeepVolumes, removeVolume,
 } from '../orchestrator/index.js'
+import { isMissingContainerError } from '../orchestrator/docker.js'
 
 /** 团队空间 slug：小写 ascii + 连字符；全部剥离后兜底 'team'。 */
 export function deriveTeamSlug(name) {
@@ -128,4 +132,47 @@ export async function removeMemberCascade({ space, targetUserId, actor, retryDel
   removeSpaceMember(space.id, targetUserId)
   writeAudit({ actorId: actor.id, action: 'space.member_remove', targetType: 'space',
     targetId: String(space.id), detail: { email: target?.email } })
+}
+
+/**
+ * 删除空间级联（spec §5 顺序）：逐个实例停 + 删容器（容器已消失不视为失败）→
+ * 全部私有卷 → 共享卷 → 单事务删行。任一步骤重试后仍失败：实例标 error、
+ * 写 space.delete_failed 审计、抛 502。残留资源由计划 06 用量页暴露。
+ */
+export async function deleteSpaceCascade({ space, actor, retryDelayMs = 500 }) {
+  assertTeamSpace(space)
+  const isOwner = getSpaceMember(space.id, actor.id)?.role === 'owner'
+  if (!isOwner && actor.role !== 'admin') {
+    throw apiError(403, 'FORBIDDEN', '仅空间所有者或平台管理员可删除空间')
+  }
+  const instances = listInstancesForSpace(space.id)
+  try {
+    for (const inst of instances) {
+      await withRetry(async () => {
+        try {
+          await stopInstance(inst.id)
+          await removeContainer(inst.container_name)
+        } catch (err) {
+          if (!isMissingContainerError(err)) throw err
+        }
+      }, { delayMs: retryDelayMs })
+    }
+    const vols = listVolumesForSpace(space.id)
+    for (const vol of vols.filter((v) => v.kind === 'private')) {
+      await withRetry(() => removeVolume(vol.docker_name), { delayMs: retryDelayMs })
+    }
+    const shared = vols.find((v) => v.kind === 'shared')
+    if (shared) await withRetry(() => removeVolume(shared.docker_name), { delayMs: retryDelayMs })
+  } catch (err) {
+    const message = String(err?.message ?? err)
+    for (const inst of instances) {
+      updateInstance(inst.id, { status: 'error', error: `space delete failed: ${message}` })
+    }
+    writeAudit({ actorId: actor.id, action: 'space.delete_failed', targetType: 'space',
+      targetId: String(space.id), detail: { error: message } })
+    throw apiError(502, 'SPACE_DELETE_FAILED', `空间删除失败：${message}；请稍后重试`)
+  }
+  deleteSpace(space.id)
+  writeAudit({ actorId: actor.id, action: 'space.delete', targetType: 'space',
+    targetId: String(space.id), detail: { slug: space.slug } })
 }
