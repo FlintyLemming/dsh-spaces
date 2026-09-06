@@ -10,7 +10,7 @@ import { getDocker } from '../orchestrator/docker.js'
 import { runImageBuild } from '../imagebuild/index.js'
 import { deleteSpaceCascade } from '../spaces/team.js'
 import { closeUserSockets } from '../gateway/index.js'
-import { writeAudit } from '../store/audit.js'
+import { writeAudit, listAudit } from '../store/audit.js'
 import { getSetting, setSetting } from '../store/settings.js'
 import { listUsersWithStats, listSpacesWithStats, getSpaceAdminDetail, countActiveAdmins }
   from './queries.js'
@@ -21,6 +21,9 @@ const SETTINGS_KEYS = [
   'oidc_issuer', 'oidc_client_id', 'oidc_scope', 'password_login_enabled',
   'default_quota_cpu', 'default_quota_mem_mb', 'default_quota_instances', 'idle_stop_minutes',
 ]
+
+const DEFAULT_AUDIT_LIMIT = 100
+const MAX_AUDIT_LIMIT = 500
 
 const idParams = z.object({ id: z.coerce.number().int().positive() })
 const slugParams = z.object({ slug: z.string().regex(/^[a-z0-9-]+$/) })
@@ -267,4 +270,29 @@ export default async function adminRoutes(app) {
   })
 
   app.get('/usage', async () => collectUsage(getDocker(), listAllSpaces().map((s) => s.slug)))
+
+  // limit 超过上限按上限截断（而非报错）：审计页的翻页控件不该因手改 URL 而失败。
+  app.get('/audit', {
+    schema: {
+      querystring: z.object({
+        actorId: z.coerce.number().int().optional(),
+        action: z.string().optional(),
+        since: z.coerce.number().int().optional(),
+        until: z.coerce.number().int().optional(),
+        limit: z.coerce.number().int().min(1).optional(),
+        offset: z.coerce.number().int().min(0).optional(),
+      }),
+    },
+  }, async (req) => {
+    const { limit, offset, ...filters } = req.query
+    const entries = listAudit({
+      ...filters,
+      limit: Math.min(limit ?? DEFAULT_AUDIT_LIMIT, MAX_AUDIT_LIMIT),
+      offset: offset ?? 0,
+    }).map((row) => ({
+      ...row,
+      actor_email: row.actor_id == null ? null : (getUserById(row.actor_id)?.email ?? null),
+    }))
+    return { entries }
+  })
 }
