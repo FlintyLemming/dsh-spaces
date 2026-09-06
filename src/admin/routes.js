@@ -9,8 +9,15 @@ import { stopInstance, removeContainer } from '../orchestrator/index.js'
 import { deleteSpaceCascade } from '../spaces/team.js'
 import { closeUserSockets } from '../gateway/index.js'
 import { writeAudit } from '../store/audit.js'
+import { getSetting, setSetting } from '../store/settings.js'
 import { listUsersWithStats, listSpacesWithStats, getSpaceAdminDetail, countActiveAdmins }
   from './queries.js'
+
+// secret 不在此列：读接口只下发 oidc_client_secret_configured 布尔（spec §6）。
+const SETTINGS_KEYS = [
+  'oidc_issuer', 'oidc_client_id', 'oidc_scope', 'password_login_enabled',
+  'default_quota_cpu', 'default_quota_mem_mb', 'default_quota_instances', 'idle_stop_minutes',
+]
 
 const idParams = z.object({ id: z.coerce.number().int().positive() })
 const slugParams = z.object({ slug: z.string().regex(/^[a-z0-9-]+$/) })
@@ -152,5 +159,43 @@ export default async function adminRoutes(app) {
     const space = requireSpace(req.params.slug)
     await deleteSpaceCascade({ space, actor: req.user })
     return { ok: true }
+  })
+
+  app.get('/settings', async () => {
+    const settings = {}
+    for (const key of SETTINGS_KEYS) settings[key] = getSetting(key)
+    settings.oidc_client_secret_configured = getSetting('oidc_client_secret') !== ''
+    return { settings }
+  })
+
+  // 部分更新：只写实际变化的键；oidc_client_secret 传空串表示保持不变。
+  // 审计 detail 只记录键名，绝不记录值（spec §3：审计永不含 secret）。
+  app.put('/settings', {
+    schema: {
+      body: z.object({
+        oidc_issuer: z.union([z.literal(''), z.string().url().startsWith('https://')]).optional(),
+        oidc_client_id: z.string().optional(),
+        oidc_client_secret: z.string().optional(),
+        oidc_scope: z.string().min(1).optional(),
+        password_login_enabled: z.enum(['true', 'false']).optional(),
+        default_quota_cpu: z.number().positive().optional(),
+        default_quota_mem_mb: z.number().int().positive().optional(),
+        default_quota_instances: z.number().int().positive().optional(),
+        idle_stop_minutes: z.number().int().positive().optional(),
+      }).strict(),
+    },
+  }, async (req) => {
+    const changed = []
+    for (const [key, value] of Object.entries(req.body)) {
+      if (key === 'oidc_client_secret' && value === '') continue
+      if (getSetting(key) === String(value)) continue
+      setSetting(key, value)
+      changed.push(key)
+    }
+    if (changed.length) {
+      writeAudit({ actorId: req.user.id, action: 'admin.settings_update', targetType: 'settings',
+        targetId: null, detail: { changed } })
+    }
+    return { ok: true, changed }
   })
 }
