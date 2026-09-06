@@ -4,6 +4,7 @@ import {
   createSpace, getSpaceBySlug, addSpaceMember, getSpaceMember,
 } from '../store/spaces.js'
 import { createVolume } from '../store/volumes.js'
+import { getUserByEmail } from '../store/users.js'
 import { ensureVolume, prepareSharedVolume } from '../orchestrator/index.js'
 
 /** 团队空间 slug：小写 ascii + 连字符；全部剥离后兜底 'team'。 */
@@ -59,4 +60,25 @@ export async function createTeamSpace({ name, owner }) {
     return space
   }
   throw apiError(409, 'SLUG_EXHAUSTED', '空间名称冲突过多，请换一个名称')
+}
+
+/** 按邮箱添加成员（仅限已注册用户，spec §5）；同时建私有卷行并 provisioning。 */
+export async function addMemberByEmail({ space, email, actor }) {
+  assertTeamSpace(space)
+  requireSpaceOwner(actor, space)
+  const target = getUserByEmail(String(email).toLowerCase())
+  if (!target) {
+    throw apiError(404, 'USER_NOT_REGISTERED', '该用户尚未登录过平台，无法邀请')
+  }
+  if (getSpaceMember(space.id, target.id)) {
+    throw apiError(409, 'ALREADY_MEMBER', '该用户已是空间成员')
+  }
+  addSpaceMember({ spaceId: space.id, userId: target.id, role: 'member' })
+  const dockerName = `dshvol-${space.slug}-${target.handle}`
+  createVolume({ spaceId: space.id, kind: 'private', userId: target.id, dockerName })
+  await ensureVolume(dockerName)
+  writeAudit({ actorId: actor.id, action: 'space.member_add', targetType: 'space',
+    targetId: String(space.id), detail: { email: target.email } })
+  return { userId: target.id, email: target.email, handle: target.handle,
+    displayName: target.display_name, role: 'member' }
 }

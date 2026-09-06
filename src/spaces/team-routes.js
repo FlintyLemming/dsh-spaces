@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { requireUser } from '../auth/middleware.js'
-import { createTeamSpace } from './team.js'
+import { getSpaceBySlug } from '../store/spaces.js'
+import { addMemberByEmail, createTeamSpace } from './team.js'
+
+const slugParams = z.object({ slug: z.string().regex(/^[a-z0-9-]+$/) })
 
 function publicSpace(space) {
   return { id: space.id, slug: space.slug, name: space.name, kind: space.kind }
@@ -15,5 +18,16 @@ export default async function teamRoutes(app) {
   }, async (req, reply) => {
     const space = await createTeamSpace({ name: req.body.name, owner: req.user })
     return reply.code(201).send({ space: publicSpace(space) })
+  })
+
+  app.post('/:slug/members', {
+    schema: {
+      params: slugParams,
+      body: z.object({ email: z.string().email() }),
+    },
+  }, async (req, reply) => {
+    const space = getSpaceBySlug(req.params.slug)
+    const member = await addMemberByEmail({ space, email: req.body.email, actor: req.user })
+    return reply.code(201).send({ member })
   })
 }
