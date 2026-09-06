@@ -32,8 +32,15 @@ export function updateSpaceQuotas(id, { quotaCpu, quotaMemMb, quotaInstances }) 
   ).run(quotaCpu, quotaMemMb, quotaInstances, id)
 }
 
+/** 单事务级联删除空间的全部行；docker 资源的清理由调用方在此之前完成（spec §5）。 */
 export function deleteSpace(id) {
-  getDb().prepare('DELETE FROM spaces WHERE id = ?').run(id)
+  const db = getDb()
+  db.transaction(() => {
+    db.prepare('DELETE FROM instances WHERE space_id = ?').run(id)
+    db.prepare('DELETE FROM volumes WHERE space_id = ?').run(id)
+    db.prepare('DELETE FROM space_members WHERE space_id = ?').run(id)
+    db.prepare('DELETE FROM spaces WHERE id = ?').run(id)
+  })()
 }
 
 export function addSpaceMember({ spaceId, userId, role = 'member' }) {
