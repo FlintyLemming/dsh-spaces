@@ -8,6 +8,7 @@ import {
 import { getInstance, upsertInstance } from '../store/instances.js'
 import { containerNameFor, startInstance, stopInstance, rebuildInstance }
   from '../orchestrator/index.js'
+import teamRoutes from './team-routes.js'
 
 const slugParams = z.object({ slug: z.string().regex(/^[a-z0-9-]+$/) })
 
@@ -88,4 +89,7 @@ export async function spacesRoutes(app) {
       targetType: 'instance', targetId: String(inst.id) })
     return { instance: publicInstance(result) }
   })
+
+  // 团队空间管理（计划 05）：同前缀挂载，无独立 prefix。
+  await app.register(teamRoutes)
 }
