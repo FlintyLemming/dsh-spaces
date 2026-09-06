@@ -66,3 +66,28 @@ input:focus { outline: 1px solid var(--muted); }
 .member-add { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .section-head h2 { flex: 1; }
+
+/* 管理后台（计划 06）：宽表格页，标签页导航用文字 + 下边框表达选中态 */
+.admin-page { max-width: 960px; }
+.admin-tabs {
+  display: flex; gap: 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+.admin-tab {
+  padding: 8px 2px; text-decoration: none; color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+.admin-tab.active { color: var(--fg); border-bottom-color: var(--fg); }
+.admin-filter { max-width: 36ch; margin-bottom: 16px; }
+.success-text { color: var(--success); font-size: 13px; }
+.quota-form { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+.quota-form .field { margin-bottom: 0; }
+.quota-form .field input { max-width: 12ch; }
+.admin-summary { font-variant-numeric: tabular-nums; }
+.build-log {
+  white-space: pre-wrap; max-height: 240px; overflow: auto;
+  border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-top: 8px;
+}
+.image-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.image-actions input { max-width: 76ch; flex: 1 1 46ch; }

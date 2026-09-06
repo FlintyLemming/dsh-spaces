@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
 import { CreateSpaceDialog } from '../components/CreateSpaceDialog'
+import { useMe } from '../components/RequireAuth'
 
 interface SpaceRow {
   id: number
@@ -21,6 +22,7 @@ export default function SpaceList() {
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
   const navigate = useNavigate()
+  const { user } = useMe()
   useEffect(() => {
     apiFetch<{ spaces: SpaceRow[] }>('/api/spaces')
       .then((r) => setSpaces(r.spaces))
@@ -49,7 +51,10 @@ export default function SpaceList() {
   )
   return (
     <main className="page">
-      <h1 className="title">空间</h1>
+      <div className="section-head">
+        <h1 className="title">空间</h1>
+        {user?.role === 'admin' && <Link to="/admin/users">管理后台</Link>}
+      </div>
       <h2>个人空间</h2>
       {renderTable(personal)}
       <div className="section-head">
