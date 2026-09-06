@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { apiFetch, ApiRequestError } from '../api'
 import { useMe } from '../components/RequireAuth'
+import { MembersPanel } from '../components/MembersPanel'
+import { DeleteSpaceSection } from '../components/DeleteSpaceSection'
 
 interface Instance {
   id: number
@@ -23,6 +25,7 @@ const STATUS_TEXT: Record<string, string> = {
 export default function SpaceDetail() {
   const { slug } = useParams<{ slug: string }>()
   const { user } = useMe()
+  const navigate = useNavigate()
   const [detail, setDetail] = useState<Detail | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -75,19 +78,20 @@ export default function SpaceDetail() {
         ) : null}
       </p>
 
-      <h2>成员</h2>
-      <table>
-        <thead><tr><th>邮箱</th><th>标识</th><th>角色</th></tr></thead>
-        <tbody>
-          {members.map((m) => (
-            <tr key={m.userId}>
-              <td>{m.email}</td>
-              <td className="mono">{m.handle}</td>
-              <td>{m.role === 'owner' ? '所有者' : '成员'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <MembersPanel
+        slug={space.slug}
+        members={members}
+        meId={user?.id ?? 0}
+        onChanged={() => { load().catch((e) => setError(e.message)) }}
+      />
+
+      <DeleteSpaceSection
+        slug={space.slug}
+        kind={space.kind}
+        isOwnerOrAdmin={user?.role === 'admin'
+          || members.some((m) => m.userId === user?.id && m.role === 'owner')}
+        onDeleted={() => navigate('/spaces')}
+      />
     </main>
   )
 }
