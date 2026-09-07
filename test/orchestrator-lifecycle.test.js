@@ -32,7 +32,7 @@ beforeEach(async () => {
   docker = {
     containers: new Map(),
     async createContainer(opts) {
-      this.containers.set(opts.name, { State: { Running: false } })
+      this.containers.set(opts.name, { State: { Running: false }, Image: opts.Image })
       return { id: opts.name }
     },
     getContainer(name) {
@@ -123,6 +123,25 @@ test('startInstance marks error when health check times out', { timeout: 15000 }
   const result = await startInstance(inst.id)
   assert.equal(result.status, 'error')
   assert.match(result.error, /health/i)
+})
+
+// 回归：digest 变更走的是「删旧容器保留卷再重建」分支，而 startInstance 已经持有
+// 该容器名的生命周期锁——用带锁的 removeContainerKeepVolumes 会自我死锁，请求永远挂住。
+test('digest change rebuilds the container instead of deadlocking', { timeout: 10000 }, async () => {
+  const srv = http.createServer((req, res) => { res.writeHead(200); res.end('ok') })
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r))
+  const inst = await makeInstance()
+  updateInstance(inst.id, { port: srv.address().port })
+  await startInstance(inst.id)
+  await stopInstance(inst.id)
+
+  const next = 'sha256:' + 'c'.repeat(64)
+  setSetting('image_digest', next)
+  const result = await startInstance(inst.id)
+  assert.equal(result.status, 'running')
+  assert.equal(result.image_digest, next)
+  assert.equal(docker.containers.get('dsh-p-aa-aa').Image, next)
+  srv.close()
 })
 
 test('stopInstance stops container and marks stopped', async () => {

@@ -180,6 +180,10 @@ export async function createInstanceContainer({ spaceSlug, handle, port, imageDi
     Env: [
       'DSH_HOME=/home/dsh/.dsh',
       `BASE_PATH=/s/${spaceSlug}/${handle}`,
+      // dsh 的原生 requireBuiltin 默认把 .node 落到 os.tmpdir() 再 dlopen，而
+      // docker 的 tmpfs 一律带 noexec —— 加载失败会让 HMR 服务抛错、整个 boot 挂掉。
+      // 关掉该缓存改从只读镜像路径直接加载，/tmp 得以保持 noexec。
+      'NARB_DISABLE_NATIVE_CACHE=1',
     ],
     ExposedPorts: { '3000/tcp': {} },
     HostConfig: {
@@ -306,7 +310,9 @@ export async function startInstance(instanceId) {
       if (await containerExists(name)) {
         const info = await getDocker().getContainer(name).inspect()
         if (info.Image !== image && inst.image_digest && inst.image_digest !== image) {
-          await removeContainerKeepVolumes(name)
+          // 已持有该容器名的生命周期锁——用内部无锁版本，避免自我死锁
+          await removeContainerInner(name)
+          invalidateRunning(name)
         }
       }
       if (!(await containerExists(name))) {
