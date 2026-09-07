@@ -24,8 +24,13 @@ async function getOidcConfiguration() {
   if (cached?.key === key) return cached.configuration
   let configuration
   try {
+    // openid-client 默认拒绝非 HTTPS issuer。开发/E2E 的 mock IdP 跑在 http 上，
+    // 需显式放行；生产走不到这里——issuer 的 https 由 PUT /api/admin/settings 强制。
+    const insecure = getConfig().environment !== 'production' && issuer.startsWith('http://')
     configuration = await oidc.discovery(
       new URL(issuer), clientId, getSetting('oidc_client_secret') || undefined,
+      undefined,
+      insecure ? { execute: [oidc.allowInsecureRequests] } : undefined,
     )
   } catch (err) {
     throw apiError(502, 'OIDC_UNAVAILABLE', `无法连接身份提供方：${err.message}`)

@@ -12,6 +12,7 @@ import { deleteSpaceCascade } from '../spaces/team.js'
 import { closeUserSockets } from '../gateway/index.js'
 import { writeAudit, listAudit } from '../store/audit.js'
 import { getSetting, setSetting } from '../store/settings.js'
+import { getConfig } from '../config.js'
 import { listUsersWithStats, listSpacesWithStats, getSpaceAdminDetail, countActiveAdmins }
   from './queries.js'
 import { collectUsage } from './usage.js'
@@ -21,6 +22,17 @@ const SETTINGS_KEYS = [
   'oidc_issuer', 'oidc_client_id', 'oidc_scope', 'password_login_enabled',
   'default_quota_cpu', 'default_quota_mem_mb', 'default_quota_instances', 'idle_stop_minutes',
 ]
+
+// issuer 生产强制 https；开发/E2E 允许 http —— mock IdP 没有 TLS。
+// 用 refine 而非 startsWith，是为了在校验时（而非模块加载时）读当前环境。
+const issuerSchema = z.union([
+  z.literal(''),
+  z.string().url().refine(
+    (v) => v.startsWith('https://')
+      || (getConfig().environment !== 'production' && v.startsWith('http://')),
+    { message: 'oidc_issuer must use https' },
+  ),
+])
 
 const DEFAULT_AUDIT_LIMIT = 100
 const MAX_AUDIT_LIMIT = 500
@@ -179,7 +191,7 @@ export default async function adminRoutes(app) {
   app.put('/settings', {
     schema: {
       body: z.object({
-        oidc_issuer: z.union([z.literal(''), z.string().url().startsWith('https://')]).optional(),
+        oidc_issuer: issuerSchema.optional(),
         oidc_client_id: z.string().optional(),
         oidc_client_secret: z.string().optional(),
         oidc_scope: z.string().min(1).optional(),
