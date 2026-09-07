@@ -2,11 +2,14 @@
 # scripts/build-image.sh — 从批准的上游 commit 构建 dsh 镜像（移植自 portal，podman→docker）。
 # 安全校验顺序：固定 commit → 工作区干净 → patch 可应用 → .dockerignore 白名单
 # → git archive 干净上下文 → docker build → 输出不可变 sha256 digest。
-# 环境旋钮（测试用）：DSH_DIR / IMAGE_DIR / DOCKER_BUILD=false（跳过构建只跑校验）。
+# 环境旋钮（测试用）：ROOT_DIR / DSH_DIR / IMAGE_DIR / APPROVED_DSH_COMMIT /
+# DOCKER_BUILD=false（跳过构建只跑校验）——安全回归测试要在临时夹具上跑同一份脚本。
 set -euo pipefail
-cd "$(dirname "$0")/.."
 
-APPROVED_DSH_COMMIT='47f943859bef60e4160492346772ded9b24f765a'
+ROOT_DIR="${ROOT_DIR:-$(dirname "$0")/..}"
+cd "$ROOT_DIR"
+
+APPROVED_DSH_COMMIT="${APPROVED_DSH_COMMIT:-47f943859bef60e4160492346772ded9b24f765a}"
 IMAGE_TAG='dsh:47f9438-node24'
 DSH_DIR="${DSH_DIR:-dsh}"
 IMAGE_DIR="${IMAGE_DIR:-image}"
@@ -25,9 +28,10 @@ if [ -n "$(git -C "$DSH_DIR" status --porcelain --untracked-files=all)" ]; then
   echo "error: dsh contains tracked or untracked changes; reset to the approved commit" >&2
   exit 1
 fi
+IMAGE_ABS="$(cd "$IMAGE_DIR" && pwd)"
 for patch in dsh-security.patch dsh-base-path.patch; do
   [ -s "$IMAGE_DIR/$patch" ] || { echo "error: $IMAGE_DIR/$patch missing" >&2; exit 1; }
-  git -C "$DSH_DIR" apply --check "../$IMAGE_DIR/$patch" \
+  git -C "$DSH_DIR" apply --check "$IMAGE_ABS/$patch" \
     || { echo "error: $IMAGE_DIR/$patch does not apply cleanly" >&2; exit 1; }
 done
 
@@ -36,7 +40,11 @@ expected_includes=(
   '!dsh/' '!dsh/**' '!image/' '!image/Dockerfile' '!image/start.sh'
   '!image/dsh-security.patch' '!image/dsh-base-path.patch'
 )
-mapfile -t actual_includes < <(grep '^!' .dockerignore)
+# 不用 mapfile：它是 bash 4+，macOS 自带 /bin/bash 是 3.2。
+actual_includes=()
+while IFS= read -r line; do
+  actual_includes+=("$line")
+done < <(grep '^!' "$IMAGE_DIR/.dockerignore")
 if [ "${#actual_includes[@]}" -ne "${#expected_includes[@]}" ]; then
   echo 'error: .dockerignore contains an unexpected build-context inclusion' >&2
   exit 1
@@ -56,10 +64,10 @@ mkdir -p "$CONTEXT/dsh" "$CONTEXT/image"
 git -C "$DSH_DIR" archive "$APPROVED_DSH_COMMIT" | tar -x -C "$CONTEXT/dsh"
 cp "$IMAGE_DIR/Dockerfile" "$IMAGE_DIR/start.sh" \
    "$IMAGE_DIR/dsh-security.patch" "$IMAGE_DIR/dsh-base-path.patch" "$CONTEXT/image/"
-cp .dockerignore "$CONTEXT/.dockerignore"
+cp "$IMAGE_DIR/.dockerignore" "$CONTEXT/.dockerignore"
 
 if [ "$DOCKER_BUILD" != 'true' ]; then
-  echo "checks passed (DOCKER_BUILD=$DOCKER_BUILD, skipping docker build)"
+  echo "checks passed; docker build skipped (DOCKER_BUILD=$DOCKER_BUILD)"
   exit 0
 fi
 
