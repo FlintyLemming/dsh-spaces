@@ -9,9 +9,15 @@ export class ApiRequestError extends Error {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // content-type 只在真有 body 时才发：无 body 的 POST/DELETE 带上它，
+  // 服务端会把空 body 当成畸形 JSON 而拒绝。
+  const hasBody = init?.body !== undefined && init?.body !== null
   const res = await fetch(path, {
-    headers: { 'content-type': 'application/json' },
     ...init,
+    headers: {
+      ...(hasBody ? { 'content-type': 'application/json' } : {}),
+      ...init?.headers,
+    },
   })
   if (!res.ok) {
     let body: { error?: { code?: string; message?: string } } | null = null

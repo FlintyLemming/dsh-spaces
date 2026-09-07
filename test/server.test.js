@@ -38,3 +38,36 @@ test('zod validation failure returns 400 with structured error', async () => {
   assert.equal(res.json().error.code, 'VALIDATION_FAILED')
   await app.close()
 })
+
+// 回归：SPA 的 apiFetch 对每个请求都带 content-type: application/json，
+// 无 body 的 POST（启动/停止实例、禁用用户、构建镜像…）因此会带着空 body 到达。
+// Fastify 默认对此报 FST_ERR_CTP_EMPTY_JSON_BODY(400)，曾被错误处理器伪装成
+// 「请求参数不合法」，导致整类操作在 UI 上失败。空 body 必须当作无 body 处理。
+test('bodyless POST with a json content-type is accepted', async () => {
+  const app = await makeApp()
+  app.post('/api/echo-body', async (req) => ({ body: req.body ?? null }))
+  await app.ready()
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/echo-body',
+    headers: { 'content-type': 'application/json' },
+    payload: '',
+  })
+  assert.equal(res.statusCode, 200)
+  assert.deepEqual(res.json(), { body: null })
+  await app.close()
+})
+
+test('malformed json body still returns a 400', async () => {
+  const app = await makeApp()
+  app.post('/api/echo-body2', async (req) => ({ body: req.body ?? null }))
+  await app.ready()
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/echo-body2',
+    headers: { 'content-type': 'application/json' },
+    payload: '{not json',
+  })
+  assert.equal(res.statusCode, 400)
+  await app.close()
+})

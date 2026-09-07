@@ -33,11 +33,27 @@ export async function buildServer({ config, gatewayProxy } = {}) {
   app.setSerializerCompiler(serializerCompiler)
   app.register(cookie)
 
+  // 无 body 的 POST/DELETE（启动实例、禁用用户、构建镜像…）客户端仍会带
+  // content-type: application/json；Fastify 默认对空 body 报 400。把空 body
+  // 当作「无 body」，畸形 JSON 仍然 400。
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    if (body === '' || body === undefined || body === null) return done(null, undefined)
+    try {
+      done(null, JSON.parse(body))
+    } catch (err) {
+      err.statusCode = 400
+      done(err)
+    }
+  })
+
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ApiError) {
       return reply.code(err.statusCode).send({ error: { code: err.code, message: err.message } })
     }
     if (err instanceof ZodError || err.statusCode === 400) {
+      // 非 zod 的 400（协议层错误，如空 JSON body）此前无声消失，只留下
+      // 一句「请求参数不合法」——记一条日志，否则这类问题无从排查。
+      if (!(err instanceof ZodError)) req.log.warn({ err }, 'request rejected with 400')
       return reply.code(400).send({
         error: { code: 'VALIDATION_FAILED', message: '请求参数不合法' },
       })
