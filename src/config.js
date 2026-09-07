@@ -56,6 +56,8 @@ export function loadConfig(env = process.env) {
     instanceUid: num(env, 'INSTANCE_UID', 1000),
     instanceGid: num(env, 'INSTANCE_GID', 1000),
     instanceNetwork: env.INSTANCE_NETWORK ?? 'dsh-tenants',
+    // 租户出口防火墙 fail-closed：生产默认强制；开发可显式关闭。
+    firewallRequired: bool(env, 'FIREWALL_REQUIRED', environment === 'production'),
     instanceStartTimeoutMs: num(env, 'INSTANCE_START_TIMEOUT_MS', 180 * 1000),
     coldStartTimeoutMs: num(env, 'COLD_START_TIMEOUT_MS', 30 * 1000),
     idleSweepIntervalMs: num(env, 'IDLE_SWEEP_INTERVAL_MS', 60 * 1000),

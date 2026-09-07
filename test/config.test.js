@@ -25,3 +25,14 @@ test('loadConfig requires https platform origin outside development', () => {
     /PLATFORM_ORIGIN/,
   )
 })
+
+test('firewallRequired defaults: false in development, true in production', () => {
+  assert.equal(loadConfig({ NODE_ENV: 'development' }).firewallRequired, false)
+  assert.equal(loadConfig({ NODE_ENV: 'production', PLATFORM_ORIGIN: 'https://x.com' }).firewallRequired, true)
+})
+
+test('FIREWALL_REQUIRED explicit override wins', () => {
+  assert.equal(loadConfig({ NODE_ENV: 'production', PLATFORM_ORIGIN: 'https://x.com', FIREWALL_REQUIRED: 'false' }).firewallRequired, false)
+  assert.equal(loadConfig({ FIREWALL_REQUIRED: 'true' }).firewallRequired, true)
+  assert.throws(() => loadConfig({ FIREWALL_REQUIRED: 'yes' }), /FIREWALL_REQUIRED must be true or false/)
+})
