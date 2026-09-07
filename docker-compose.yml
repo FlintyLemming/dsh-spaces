@@ -1,0 +1,17 @@
+# 部署顺序（详见 README）：
+#   1. docker compose up -d            # 首次启动会创建 dsh-tenants 网络
+#   2. sudo firewall/apply.sh          # 宿主机应用租户出口防火墙（fail-closed 前置）
+#   3. docker compose restart platform # 让平台在防火墙生效后通过启动校验
+services:
+  platform:
+    build: .
+    # 实例端口发布在宿主机 127.0.0.1:<port>；网关经共享网络命名空间反代。
+    # 因此不能用 ports: 映射——监听端口由 PORT 环境变量控制，TLS 由前置反代终结。
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dsh-data:/data
+    env_file: .env
+    restart: unless-stopped
+volumes:
+  dsh-data:

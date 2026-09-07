@@ -1,0 +1,13 @@
+# 根 .dockerignore —— 平台 Dockerfile 的构建上下文。
+# 注意：dsh 实例镜像管线用的是 image/.dockerignore（deny-by-default 白名单，
+# 由 scripts/build-image.sh 校验并拷进独立的 git archive 上下文）。两者职责不同。
+node_modules
+src/web/node_modules
+src/web/dist
+data
+dsh
+docs
+test
+.git
+*.log
+.env
