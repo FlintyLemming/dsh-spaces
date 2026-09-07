@@ -1,0 +1,30 @@
+# E2E 环境：mock IdP + 真实平台容器。假 dsh 不是 service —— 它是**镜像**，
+# 实例由平台编排器创建，这才是被测路径。用 run.sh 拉起。
+services:
+  mock-idp:
+    build: ./mock-idp
+    environment:
+      ISSUER: http://localhost:19999
+      PLATFORM_ORIGIN: http://localhost:18080
+    ports:
+      - '19999:9999'
+  platform:
+    build: ../..
+    network_mode: host   # 与生产一致：实例端口在宿主 loopback，平台共享网络命名空间
+    environment:
+      NODE_ENV: development
+      PORT: '18080'
+      HOST: 0.0.0.0
+      PLATFORM_ORIGIN: http://localhost:18080
+      COOKIE_SECURE: 'false'
+      DATA_DIR: /data
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: e2e-admin-password-16+
+      FIREWALL_REQUIRED: 'false'   # CI/开发机无 nftables 时不做 fail-closed 校验
+      PORT_RANGE_START: '18200'    # 避开开发默认 18000 段
+      PORT_RANGE_END: '18220'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - e2e-data:/data
+volumes:
+  e2e-data:
