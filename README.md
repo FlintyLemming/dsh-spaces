@@ -58,3 +58,35 @@ src/
 ## 实施计划
 
 `docs/superpowers/plans/` 下的 7 个计划按序执行：01 骨架 → 02 认证 → 03 空间与编排 → 04 网关反代 → 05 团队空间 → 06 管理后台 → 07 加固与 E2E。当前已完成 01。
+
+## 部署（单机 Docker）
+
+前置：Docker ≥ 24、nftables、Node 24（仅构建镜像时需要）。
+
+1. 克隆上游 dsh 并 checkout 批准 commit（见 `scripts/build-image.sh` 顶部），构建实例镜像：
+   `npm run build:image`（输出 `sha256:` digest）。
+2. `cp .env.example .env` 并填写 `PLATFORM_ORIGIN`、`ADMIN_EMAIL`、`ADMIN_PASSWORD`（≥16 位）。
+3. `docker pull alpine:3`（防火墙探针镜像）。
+4. `docker compose up -d`（首次启动创建 `dsh-tenants` 网络；此时启动校验会失败属预期）。
+5. `sudo firewall/apply.sh`（应用租户出口防火墙）。
+6. `docker compose restart platform`（fail-closed 校验通过，平台就绪）。
+7. 浏览器打开平台，管理员密码登录 → 设置里配置 OIDC → 填实例镜像 digest → 建议关闭密码登录。
+
+安全边界说明：平台容器挂载 /var/run/docker.sock（宿主 root 等价），v1 以 root 运行；
+租户实例固定非 root UID、只读根 fs、no-new-privileges、限额、出口防火墙隔离。
+
+### 两个 .dockerignore
+
+- `image/.dockerignore` —— dsh **实例镜像**管线的 deny-by-default 白名单，
+  由 `scripts/build-image.sh` 逐行校验（漂移即构建失败），并拷进 `git archive`
+  生成的独立构建上下文。
+- `.dockerignore`（仓库根）—— **平台镜像** `Dockerfile` 的构建上下文排除表。
+
+两者职责不同，不要合并。
+
+### 端到端冒烟
+
+`npm run test:e2e` 拉起 mock OIDC IdP + 假 dsh 镜像 + 真实平台容器，跑通
+「OIDC 登录 → 个人空间 → 启动实例 → 路径反代」。需要本机 Docker；
+默认 `npm test` 不依赖 Docker 守护进程。收尾：
+`docker compose -f test/e2e/docker-compose.yml down -v`。
