@@ -38,7 +38,7 @@ done
 # deny-by-default 的 .dockerignore 只允许这些 re-inclusion。
 expected_includes=(
   '!dsh/' '!dsh/**' '!image/' '!image/Dockerfile' '!image/start.sh'
-  '!image/dsh-security.patch' '!image/dsh-base-path.patch'
+  '!image/dsh-security.patch' '!image/dsh-base-path.patch' '!image/link-workspace.mjs'
 )
 # 不用 mapfile：它是 bash 4+，macOS 自带 /bin/bash 是 3.2。
 actual_includes=()
@@ -62,7 +62,7 @@ cleanup() { rm -rf "$CONTEXT"; }
 trap cleanup EXIT
 mkdir -p "$CONTEXT/dsh" "$CONTEXT/image"
 git -C "$DSH_DIR" archive "$APPROVED_DSH_COMMIT" | tar -x -C "$CONTEXT/dsh"
-cp "$IMAGE_DIR/Dockerfile" "$IMAGE_DIR/start.sh" \
+cp "$IMAGE_DIR/Dockerfile" "$IMAGE_DIR/start.sh" "$IMAGE_DIR/link-workspace.mjs" \
    "$IMAGE_DIR/dsh-security.patch" "$IMAGE_DIR/dsh-base-path.patch" "$CONTEXT/image/"
 cp "$IMAGE_DIR/.dockerignore" "$CONTEXT/.dockerignore"
 
@@ -71,7 +71,7 @@ if [ "$DOCKER_BUILD" != 'true' ]; then
   exit 0
 fi
 
-docker build --pull=always -t "$IMAGE_TAG" -f "$CONTEXT/image/Dockerfile" "$CONTEXT"
+docker build --pull -t "$IMAGE_TAG" -f "$CONTEXT/image/Dockerfile" "$CONTEXT"
 docker tag "$IMAGE_TAG" dsh:latest   # 仅本地检查用；编排只按 digest 启动
 IMAGE_ID="$(docker image inspect "$IMAGE_TAG" --format '{{.Id}}')"
 echo "built $IMAGE_TAG from $APPROVED_DSH_COMMIT"

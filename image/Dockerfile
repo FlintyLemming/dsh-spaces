@@ -40,6 +40,11 @@ RUN corepack enable \
  && pnpm audit --prod \
  && pnpm run build
 
+# 源码运行下 loader 从自身位置 import 根树插件包，pnpm isolated 布局解析不到；
+# 平铺链接工作区包到根 node_modules（理由详见脚本头注释）。
+COPY image/link-workspace.mjs /tmp/link-workspace.mjs
+RUN node /tmp/link-workspace.mjs && rm /tmp/link-workspace.mjs
+
 RUN useradd -m -s /bin/bash dsh \
  && mkdir -p /workspace/shared /home/dsh/.dsh \
  && chown -R dsh:dsh /workspace /home/dsh/.dsh

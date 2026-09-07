@@ -44,10 +44,11 @@ function makeFixture() {
 
   writeFileSync(join(image, 'Dockerfile'), 'FROM scratch\n')
   writeFileSync(join(image, 'start.sh'), '#!/bin/bash\n')
+  writeFileSync(join(image, 'link-workspace.mjs'), '// noop\n')
   writeFileSync(join(image, '.dockerignore'), [
     '*',
     '!dsh/', '!dsh/**', '!image/', '!image/Dockerfile', '!image/start.sh',
-    '!image/dsh-security.patch', '!image/dsh-base-path.patch', '',
+    '!image/dsh-security.patch', '!image/dsh-base-path.patch', '!image/link-workspace.mjs', '',
   ].join('\n'))
   return { dir, dsh, image, commit }
 }

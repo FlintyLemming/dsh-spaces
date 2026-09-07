@@ -7,3 +7,4 @@
 !image/start.sh
 !image/dsh-security.patch
 !image/dsh-base-path.patch
+!image/link-workspace.mjs
