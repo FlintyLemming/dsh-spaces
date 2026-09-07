@@ -115,7 +115,8 @@ export async function gatewayPlugin(app, { config, proxy = createGatewayProxy() 
     }
 
     touchThrottled(inst.id)
-    req.raw.url = parsed.rest + parsed.query
+    // 路径原样透传：实例以 --base-path=/s/<slug>/<handle> 启动，只在该前缀下服务，
+    // 且注入客户端的资源/API/WS URL 都带前缀。剥前缀会让实例对每个请求 404。
     reply.hijack()
     proxy.web(req.raw, reply.raw, { target: `http://127.0.0.1:${again.instance.port}` })
   })

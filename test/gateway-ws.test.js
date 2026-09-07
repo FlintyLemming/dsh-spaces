@@ -76,7 +76,7 @@ test('unauthenticated and non-member upgrades are destroyed', async () => {
   assert.equal(nonMember.destroyed, true)
 })
 
-test('authorized upgrade proxies with prefix stripped and socket tracked', async () => {
+test('authorized upgrade proxies the full prefixed path and tracks the socket', async () => {
   seedWs()
   const d = deps()
   const sock = fakeSocket()
@@ -84,7 +84,7 @@ test('authorized upgrade proxies with prefix stripped and socket tracked', async
   await handleUpgrade(req, sock, Buffer.alloc(0), d)
   assert.equal(sock.destroyed, false)
   assert.equal(d.proxy.ws.mock.calls.length, 1)
-  assert.equal(req.url, '/terminal')
+  assert.equal(req.url, '/s/team-a/alice/terminal')
   assert.equal(d.proxy.ws.mock.calls[0][3].target, 'ws://127.0.0.1:18901')
   assert.equal(__socketsForTests().size, 1)
 })

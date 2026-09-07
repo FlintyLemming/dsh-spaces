@@ -89,7 +89,7 @@ export async function handleUpgrade(req, socket, head, { config, proxy, log }) {
   socket.once('close', untrack)
   socket.once('error', untrack)
 
-  req.url = parsed.rest + parsed.query
+  // 与 HTTP 一致：实例只在 --base-path 前缀下接受升级握手，路径原样透传。
   proxy.ws(req, socket, head, { target: `ws://127.0.0.1:${again.instance.port}` })
   log?.debug?.({ instance: again.instance.id }, 'gateway websocket forwarded')
 }

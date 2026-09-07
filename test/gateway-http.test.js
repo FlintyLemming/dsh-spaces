@@ -75,7 +75,7 @@ test('bare root redirects to trailing slash', async () => {
   await app.close()
 })
 
-test('running instance proxies with prefix stripped and query preserved', async () => {
+test('running instance proxies the full prefixed path and query untouched', async () => {
   seed()
   const proxy = fakeProxy()
   const app = await buildServer({ config, gatewayProxy: proxy })
@@ -83,7 +83,8 @@ test('running instance proxies with prefix stripped and query preserved', async 
   assert.equal(res.statusCode, 200) // hijack 后由 fake proxy 结束响应
   assert.equal(proxy.web.mock.calls.length, 1)
   const [rawReq, , opts] = proxy.web.mock.calls[0]
-  assert.equal(rawReq.url, '/api/x?q=1')
+  // 实例以 --base-path 起，只认带前缀的路径
+  assert.equal(rawReq.url, '/s/team-a/alice/api/x?q=1')
   assert.equal(opts.target, 'http://127.0.0.1:18901')
   await app.close()
 })

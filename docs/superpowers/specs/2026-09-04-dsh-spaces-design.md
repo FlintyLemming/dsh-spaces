@@ -36,7 +36,7 @@
 ```
 src/
 ├── gateway/      # 反代热路径：/s/<space-slug>/<username>/... → 实例容器
-│                 #   会话校验、成员资格校验、路径前缀剥离、WebSocket 升级转发
+│                 #   会话校验、成员资格校验、路径原样透传、WebSocket 升级转发
 ├── auth/         # OIDC authorization code + PKCE 流程、会话（cookie + SQLite
 │                 #   token，7 天绝对 / 24 小时空闲）、管理员引导密码登录
 ├── spaces/       # 空间/成员/实例的 REST API 与业务规则
@@ -54,7 +54,7 @@ src/
 
 1. 浏览器请求单一域名，Fastify 按路径三分流：`/api/*` → API 模块；`/s/*` → gateway 反代；其余 → React SPA 静态资源。
 2. API 请求经会话中间件鉴权后进入 `spaces`/`admin`；编排操作由 `orchestrator` 调 docker socket 完成。
-3. `/s/<space-slug>/<username>/...` 请求由 gateway 校验会话与（空间 × 用户）成员资格，解析到 `dsh-<space-slug>-<username>` 容器的 `127.0.0.1:<port>`，剥离前缀后反代（含 WebSocket）。
+3. `/s/<space-slug>/<username>/...` 请求由 gateway 校验会话与（空间 × 用户）成员资格，解析到 `dsh-<space-slug>-<username>` 容器的 `127.0.0.1:<port>`，路径原样反代（含 WebSocket）——实例以 `--base-path=/s/<space-slug>/<username>` 启动，只在该前缀下服务。
 
 ### 部署拓扑
 
@@ -151,7 +151,8 @@ stopped → starting → running → stopped
 
 ### 路径路由与 dsh 适配
 
-- gateway 把 `/s/<space-slug>/<username>/<rest>` 反代到对应实例，剥离前缀。
+- gateway 把 `/s/<space-slug>/<username>/<rest>` 原样反代到对应实例：实例带 `--base-path` 启动，
+  客户端拿到的资源/API/WS URL 都含该前缀，剥前缀会让实例对每个请求 404。
 - dsh Web UI 需支持 base path：在镜像构建管线中新增源码 patch，使 `dsh web` 接受 `--base-path` 参数并以其为根生成资源 URL（portal 镜像构建已有 patch 机制，新增一个 patch 文件即可）。
 - 实例未运行时访问：gateway 返回友好等待页并触发冷启动（starting 状态轮询），超时 30 秒报错。
 

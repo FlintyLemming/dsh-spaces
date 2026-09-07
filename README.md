@@ -43,7 +43,7 @@ npm run build:web     # 前端产物到 src/web/dist/，由 Fastify 静态托管
 ```
 src/
 ├── gateway/      # 反代热路径：/s/<space-slug>/<username>/... → 实例容器
-│                 #   会话校验、成员资格校验、路径前缀剥离、WebSocket 升级转发
+│                 #   会话校验、成员资格校验、路径原样透传、WebSocket 升级转发
 ├── auth/         # OIDC authorization code + PKCE 流程、会话（cookie + SQLite
 │                 #   token，7 天绝对 / 24 小时空闲）、管理员引导密码登录
 ├── spaces/       # 空间/成员/实例的 REST API 与业务规则
