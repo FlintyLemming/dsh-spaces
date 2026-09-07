@@ -3,7 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>dsh-spaces</title>
+    <script>
+      // 在首帧之前贴上主题属性，否则深色用户会先看到一帧白底。
+      try {
+        var t = localStorage.getItem('dsh-theme')
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

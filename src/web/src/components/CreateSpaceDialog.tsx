@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
-import { apiFetch } from '../api'
+import { apiFetch, errorMessage } from '../api'
+import { Alert, Button, Field, Input, Modal } from './ui'
 
 interface Props {
-  onCreated: (slug: string) => void
+  onCreated: (slug: string) => void | Promise<void>
   onClose: () => void
 }
 
@@ -20,31 +21,48 @@ export function CreateSpaceDialog({ onCreated, onClose }: Props) {
         method: 'POST',
         body: JSON.stringify({ name }),
       })
-      onCreated(space.slug)
+      await onCreated(space.slug)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '创建失败')
+      setError(errorMessage(err, '创建失败'))
       setBusy(false)
     }
   }
 
   return (
-    <form className="dialog" onSubmit={submit}>
-      <h2 className="heading">创建团队空间</h2>
-      <label className="field">
-        <span>名称</span>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={64}
-          required
-          autoFocus
-        />
-      </label>
-      {error && <p className="error-text" role="alert">{error}</p>}
-      <div className="dialog-actions">
-        <button type="button" onClick={onClose} disabled={busy}>取消</button>
-        <button type="submit" disabled={busy || !name.trim()}>创建</button>
-      </div>
-    </form>
+    <Modal
+      title="创建团队空间"
+      description="空间标识会根据名称自动生成，创建后不可更改。"
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" onClick={onClose} disabled={busy}>
+            取消
+          </Button>
+          <Button
+            type="submit"
+            form="create-space"
+            variant="primary"
+            disabled={busy || !name.trim()}
+          >
+            {busy ? '创建中…' : '创建'}
+          </Button>
+        </>
+      }
+    >
+      <form id="create-space" onSubmit={submit} className="space-y-4">
+        <Field label="名称" htmlFor="space-name">
+          <Input
+            id="space-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={64}
+            required
+            autoFocus
+            placeholder="例如：数据平台组"
+          />
+        </Field>
+        {error ? <Alert>{error}</Alert> : null}
+      </form>
+    </Modal>
   )
 }

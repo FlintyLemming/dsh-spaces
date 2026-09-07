@@ -1,0 +1,212 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   语义色板。原始变量随主题翻转，@theme inline 把它们映射成 Tailwind 工具类，
+   所以 bg-surface / text-muted 这类类名在两套主题下自动生效，无需 dark: 变体。
+   主题优先级：[data-theme] 显式选择 > prefers-color-scheme > 亮色默认。
+--------------------------------------------------------------------------- */
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #fafafa;
+  --surface: #ffffff;
+  --surface-hover: #f4f4f5;
+  --surface-active: #ededee;
+  --border: #e5e5e5;
+  --border-strong: #d4d4d4;
+  --fg: #171717;
+  --fg-muted: #666666;
+  --fg-subtle: #8f8f8f;
+  --inverse-bg: #171717;
+  --inverse-fg: #fafafa;
+  --accent: #0068d6;
+  --accent-fg: #ffffff;
+  --accent-subtle: #ebf5ff;
+  --success: #17803d;
+  --success-subtle: #e6f6eb;
+  --warning: #a35200;
+  --warning-subtle: #fff3e0;
+  --danger: #c81e1e;
+  --danger-fg: #ffffff;
+  --danger-subtle: #fdecec;
+  --ring: #171717;
+  --shadow-color: 0deg 0% 0%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0a0a0a;
+    --bg-subtle: #0e0e0e;
+    --surface: #121212;
+    --surface-hover: #1c1c1c;
+    --surface-active: #242424;
+    --border: #262626;
+    --border-strong: #3a3a3a;
+    --fg: #ededed;
+    --fg-muted: #a1a1a1;
+    --fg-subtle: #7a7a7a;
+    --inverse-bg: #ededed;
+    --inverse-fg: #0a0a0a;
+    --accent: #52a8ff;
+    --accent-fg: #06182c;
+    --accent-subtle: #10233b;
+    --success: #62c073;
+    --success-subtle: #0f2417;
+    --warning: #f0a02a;
+    --warning-subtle: #2a1c05;
+    --danger: #ff6166;
+    --danger-fg: #2b0808;
+    --danger-subtle: #2c1113;
+    --ring: #ededed;
+    --shadow-color: 0deg 0% 0%;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #0a0a0a;
+  --bg-subtle: #0e0e0e;
+  --surface: #121212;
+  --surface-hover: #1c1c1c;
+  --surface-active: #242424;
+  --border: #262626;
+  --border-strong: #3a3a3a;
+  --fg: #ededed;
+  --fg-muted: #a1a1a1;
+  --fg-subtle: #7a7a7a;
+  --inverse-bg: #ededed;
+  --inverse-fg: #0a0a0a;
+  --accent: #52a8ff;
+  --accent-fg: #06182c;
+  --accent-subtle: #10233b;
+  --success: #62c073;
+  --success-subtle: #0f2417;
+  --warning: #f0a02a;
+  --warning-subtle: #2a1c05;
+  --danger: #ff6166;
+  --danger-fg: #2b0808;
+  --danger-subtle: #2c1113;
+  --ring: #ededed;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-subtle: var(--fg-subtle);
+  --color-inverse: var(--inverse-bg);
+  --color-inverse-fg: var(--inverse-fg);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger: var(--danger);
+  --color-danger-fg: var(--danger-fg);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-ring: var(--ring);
+
+  --font-sans: 'Geist Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme='light']) {
+      color-scheme: dark;
+    }
+  }
+  html[data-theme='dark'] {
+    color-scheme: dark;
+  }
+  html[data-theme='light'] {
+    color-scheme: light;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+  ::selection {
+    background: var(--accent-subtle);
+  }
+}
+
+/* 细滚动条：主区和侧边栏都会滚，默认滚动条太重，压过分隔线 */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* starting 状态的脉冲点：动效只表达状态变化（spec §8） */
+@keyframes dsh-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.dsh-pulse {
+  animation: dsh-pulse 1.4s ease-in-out infinite;
+}
+@keyframes dsh-spin {
+  to { transform: rotate(360deg); }
+}
+.dsh-spin {
+  animation: dsh-spin 0.7s linear infinite;
+}
+@keyframes dsh-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+.dsh-fade-in {
+  animation: dsh-fade-in 0.12s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dsh-pulse, .dsh-spin, .dsh-fade-in { animation: none; }
+}
