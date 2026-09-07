@@ -11,8 +11,8 @@ test('loadConfig applies defaults', () => {
   assert.equal(config.sessionIdleTtlMs, 24 * 60 * 60 * 1000)
   assert.equal(config.instanceCpus, 2)
   assert.equal(config.instanceMemoryMb, 2048)
-  assert.equal(config.instanceUid, 1000)
-  assert.equal(config.instanceGid, 1000)
+  assert.equal(config.instanceUid, 1001)
+  assert.equal(config.instanceGid, 1001)
 })
 
 test('loadConfig rejects invalid PORT', () => {

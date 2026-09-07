@@ -110,7 +110,7 @@ test('createInstanceContainer passes full isolation/host config', async () => {
   })
   const [_, opts] = docker.calls.find((c) => c[0] === 'createContainer')
   assert.equal(opts.name, 'dsh-team-a-bob')
-  assert.equal(opts.User, '1000:1000')
+  assert.equal(opts.User, '1001:1001')
   assert.ok(opts.Env.includes('DSH_HOME=/home/dsh/.dsh'))
   assert.ok(opts.Env.includes('BASE_PATH=/s/team-a/bob'))
   const hc = opts.HostConfig

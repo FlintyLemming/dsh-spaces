@@ -53,8 +53,10 @@ export function loadConfig(env = process.env) {
     instanceCpus: num(env, 'INSTANCE_CPUS', 2),
     instanceMemoryMb: num(env, 'INSTANCE_MEMORY_MB', 2048),
     instancePidsLimit: num(env, 'INSTANCE_PIDS_LIMIT', 512),
-    instanceUid: num(env, 'INSTANCE_UID', 1000),
-    instanceGid: num(env, 'INSTANCE_GID', 1000),
+    // 必须与 image/Dockerfile 里的 dsh 用户一致：node 基础镜像已占用 1000(node)，
+    // 因此 useradd 出来的 dsh 是 1001。取 1000 会让实例以 node 身份启动、写不了 /home/dsh。
+    instanceUid: num(env, 'INSTANCE_UID', 1001),
+    instanceGid: num(env, 'INSTANCE_GID', 1001),
     instanceNetwork: env.INSTANCE_NETWORK ?? 'dsh-tenants',
     // 租户出口防火墙 fail-closed：生产默认强制；开发可显式关闭。
     firewallRequired: bool(env, 'FIREWALL_REQUIRED', environment === 'production'),
