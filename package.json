@@ -11,7 +11,8 @@
     "dev": "node --watch src/index.js",
     "test": "vitest run",
     "build:web": "npm --prefix src/web run build",
-    "build:image": "bash scripts/build-image.sh"
+    "build:image": "bash scripts/build-image.sh",
+    "test:e2e": "bash test/e2e/run.sh && E2E=1 npx vitest run test/e2e/smoke.test.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
