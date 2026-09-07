@@ -98,12 +98,16 @@ export async function oidcRoutes(app) {
       throw apiError(400, 'OIDC_CALLBACK_INVALID', '身份提供方返回缺少 subject')
     }
     const issuer = configuration.serverMetadata().issuer
-    const { userId, created } = resolveOidcIdentity({ issuer, claims })
-    if (created) provisionNewUser(userId)
+    const { userId } = resolveOidcIdentity({ issuer, claims })
     const user = getUserById(userId)
     if (!user || user.status !== 'active') {
       throw apiError(403, 'FORBIDDEN', '账号已被禁用')
     }
+    // 无条件调用：provisionNewUser 幂等，已有个人空间直接返回。只在「新建用户」
+    // 时调会漏掉「按已验证邮箱绑定到已有用户」那一支（典型：引导管理员配好 OIDC
+    // 后自己登录），那类用户将永远没有个人空间。放在状态校验之后，避免给已禁用
+    // 账号建空间；必须 await，否则回调可能先于空间创建完成就跳转。
+    await provisionNewUser(userId)
     issueSession(reply, userId)
     writeAudit({ actorId: userId, action: 'user.login', targetType: 'user', targetId: userId, detail: { method: 'oidc', issuer } })
     return reply.redirect(safeReturnTo(txn.returnTo))

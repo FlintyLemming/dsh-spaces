@@ -20,6 +20,9 @@ vi.mock('openid-client', () => ({
 }))
 
 import { initDb, getDb } from '../src/store/db.js'
+import { initDocker } from '../src/orchestrator/docker.js'
+import { createUser, setUserStatus } from '../src/store/users.js'
+import { listSpacesForUser } from '../src/store/spaces.js'
 import { loadConfig, setActiveConfig } from '../src/config.js'
 import { buildServer } from '../src/server.js'
 import { setSetting } from '../src/store/settings.js'
@@ -33,6 +36,17 @@ let app
 beforeEach(async () => {
   initDb(':memory:')
   setActiveConfig(loadConfig({ NODE_ENV: 'development', PLATFORM_ORIGIN: 'http://localhost:8080' }))
+  initDocker({
+    async createVolume() { return {} },
+    async createContainer() { return { start: async () => {}, wait: async () => ({ StatusCode: 0 }) } },
+    getVolume(name) {
+      return {
+        async inspect() { const e = new Error(`no such volume: ${name}`); e.statusCode = 404; throw e },
+        async remove() {},
+      }
+    },
+    async listNetworks() { return [{ Name: 'dsh-tenants' }] },
+  })
   setSetting('oidc_issuer', 'https://idp.example.com')
   setSetting('oidc_client_id', 'dsh-spaces')
   setSetting('oidc_client_secret', 'secret')
@@ -100,4 +114,53 @@ test('callback without txn cookie returns 400', async () => {
   const res = await app.inject({ method: 'GET', url: '/api/auth/callback?code=x&state=y' })
   assert.equal(res.statusCode, 400)
   assert.equal(res.json().error.code, 'OIDC_CALLBACK_INVALID')
+})
+
+/** 走完一次 login → callback，返回 callback 响应。 */
+async function oidcLogin() {
+  const login = await app.inject({ method: 'GET', url: '/api/auth/login?return_to=/spaces' })
+  const txn = login.cookies.find((c) => c.name === 'dsh_oidc_txn')
+  return app.inject({
+    method: 'GET',
+    url: '/api/auth/callback?code=code-1&state=state-123',
+    cookies: { dsh_oidc_txn: txn.value },
+  })
+}
+
+test('callback provisions a personal space for a brand new user', async () => {
+  await oidcLogin()
+  const user = getUserByEmail('new@x.com')
+  const spaces = listSpacesForUser(user.id)
+  assert.equal(spaces.length, 1)
+  assert.equal(spaces[0].kind, 'personal')
+})
+
+// resolveOidcIdentity 在「按已验证邮箱绑定到已有用户」这支返回 created:false。
+// 旧代码 `if (created) provisionNewUser()` 让这类用户（典型：引导管理员配好
+// OIDC 后自己登录）永远拿不到个人空间。
+test('callback provisions a personal space for a user bound by verified email', async () => {
+  const existingId = createUser({ email: 'new@x.com', handle: 'preexisting', displayName: 'Seeded' })
+  assert.equal(listSpacesForUser(existingId).length, 0)
+
+  const cb = await oidcLogin()
+  assert.equal(cb.statusCode, 302)
+  assert.equal(getUserByEmail('new@x.com').id, existingId) // 绑定到同一个用户，没建新的
+  const spaces = listSpacesForUser(existingId)
+  assert.equal(spaces.length, 1)
+  assert.equal(spaces[0].kind, 'personal')
+})
+
+test('repeated logins do not create a second personal space', async () => {
+  await oidcLogin()
+  await oidcLogin()
+  const user = getUserByEmail('new@x.com')
+  assert.equal(listSpacesForUser(user.id).length, 1)
+})
+
+test('a disabled account is rejected and gets no personal space', async () => {
+  const existingId = createUser({ email: 'new@x.com', handle: 'preexisting' })
+  setUserStatus(existingId, 'disabled')
+  const cb = await oidcLogin()
+  assert.equal(cb.statusCode, 403)
+  assert.equal(listSpacesForUser(existingId).length, 0)
 })
