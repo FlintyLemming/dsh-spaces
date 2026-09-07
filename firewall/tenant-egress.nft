@@ -1,0 +1,21 @@
+# dsh-spaces 租户出口防火墙（宿主机 Docker 版，移植改造自 portal firewall/）。
+# apply.sh 会将 @TENANT_SUBNET@ 替换为 dsh-tenants 网桥的实际子网后经 nft -f 加载。
+# 语义：实例容器可出公网（模型 API 等），禁止触达内网/loopback/link-local/云元数据。
+table inet dsh-tenant-egress {
+    chain forward {
+        type filter hook forward priority 0; policy accept;
+
+        # v1 允许租户子网内部互通（同空间成员实例间无直接通信需求，放行无害；
+        # 如需收紧为仅允许网关，改此行即可）。
+        ip saddr @TENANT_SUBNET@ ip daddr @TENANT_SUBNET@ accept comment "intra-tenant subnet (v1 allow)"
+
+        # 云实例元数据端点单独成条：永远不要因为"清理 link-local"而移除它。
+        ip saddr @TENANT_SUBNET@ ip daddr 169.254.169.254 drop comment "cloud instance metadata endpoint"
+
+        ip saddr @TENANT_SUBNET@ ip daddr 127.0.0.0/8 drop comment "loopback"
+        ip saddr @TENANT_SUBNET@ ip daddr 169.254.0.0/16 drop comment "link-local"
+        ip saddr @TENANT_SUBNET@ ip daddr 10.0.0.0/8 drop comment "private 10/8"
+        ip saddr @TENANT_SUBNET@ ip daddr 172.16.0.0/12 drop comment "private 172.16/12"
+        ip saddr @TENANT_SUBNET@ ip daddr 192.168.0.0/16 drop comment "private 192.168/16"
+    }
+}
